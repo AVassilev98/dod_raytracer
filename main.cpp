@@ -1,7 +1,6 @@
 #include "glm/glm.hpp"
 #include "sphere.h"
 #include <cstdint>
-#include <pthread.h>
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image.h"
@@ -9,9 +8,9 @@
 #include <vector>
 #include "common_defs.h"
 
-#include "pthread.h"
 #include <sys/sysinfo.h>
 #include "iostream"
+#include <thread>
 
 void generateSpheres(std::vector<unsigned> &sphereIds, unsigned numSpheres)
 {
@@ -47,16 +46,17 @@ struct RayTraceData
 };
 
 
-void *rayTrace(RayTraceData &data)
+void *rayTrace(RayTraceData data)
 {
     glm::vec3 rayOrigin = {-1, 1, 0};
     glm::vec3 rayDir = {0, 0, 1};
+    std::cout << "startRow " << data.startRow << " endRow " << data.endRow << std::endl;
+
 
     constexpr float widthStep = 2.0f * g_ratio / g_width;
     constexpr float heightStep = 2.0f / g_height;
 
     unsigned sphereCount;
-    const Sphere *spheres = Sphere::getAllSpheres(sphereCount);
     
     HitRecord hr;
     
@@ -68,7 +68,7 @@ void *rayTrace(RayTraceData &data)
         rayOrigin.x = -1;
         for (unsigned j = 0; j < g_width; j++)
         {
-            HitRecord *hr_p = Sphere::intersect(spheres, sphereCount, rayDir, rayOrigin, hr);
+            HitRecord *hr_p = Sphere::intersect(rayDir, rayOrigin, hr);
             if (hr_p)
             {
                 for (unsigned k = 0; k < STBI_rgb; k++)
@@ -92,29 +92,18 @@ void *rayTrace(RayTraceData &data)
     return nullptr;
 }
 
-void *rayTrace(void *data)
-{
-    if (data == nullptr)
-    {
-        return nullptr;
-    }
-    return rayTrace(*(RayTraceData *)data);
-}
-
 int main()
 {
     srand(time(NULL));
     std::vector<unsigned> sphereIds;
-    generateSpheres(sphereIds, 100);
-    uint8_t *imageData = (uint8_t *)malloc(g_width * g_height * STBI_rgb);
+    generateSpheres(sphereIds, 1000);
+    uint8_t *imageData = (uint8_t *)calloc(g_width * g_height * STBI_rgb, sizeof(uint8_t));
 
     unsigned numCores = get_nprocs();
-    std::vector<pthread_t> threads(numCores, -1);
+    std::vector<RayTraceData> threadData(numCores);
     unsigned startRow = 0;
-    
-    RayTraceData data;
-    data.imageData = imageData;
 
+    std::vector<std::jthread> threads;
     for (unsigned i = 0; i < numCores; i++)
     {
         if (startRow >= g_height)
@@ -122,19 +111,15 @@ int main()
             break;
         }
 
-        data.startRow = startRow;
+        threadData[i].imageData = imageData;
+        threadData[i].startRow = startRow;
         unsigned endRow = startRow + ((g_height + numCores - 1) / numCores);
-        data.endRow = endRow > g_height ? g_height : endRow;
-        std::cout << "startRow " << data.startRow << " endRow " << data.endRow << std::endl;
+        threadData[i].endRow = endRow > g_height ? g_height : endRow;
 
-        pthread_create(&threads[i], nullptr, rayTrace, &data);
-        startRow = data.endRow;
+        threads.emplace_back(rayTrace, threadData[i]);
+        startRow = threadData[i].endRow;
     }
-    for (unsigned i = 0; i < numCores; i++)
-    {
-        pthread_join(threads[i], nullptr);
-    }
-
+    threads.clear();
     
     stbi_write_bmp("output.bmp", g_width, g_height, STBI_rgb, imageData);
 }

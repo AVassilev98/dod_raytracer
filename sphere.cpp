@@ -3,10 +3,20 @@
 #include <cstdint>
 #include <vector>
 
-static std::vector<Sphere> g_spheres;
+constexpr unsigned c_sphereLaneSz = 8;
+struct SphereLane
+{
+    float x[c_sphereLaneSz];
+    float y[c_sphereLaneSz];
+    float z[c_sphereLaneSz];
+    float radiusSq[c_sphereLaneSz];
+} __attribute__((packed));
+
+static unsigned g_numSpheres = 0;
+static std::vector<SphereLane> g_sphereLanes;
 static std::vector<Sphere::Attributes> g_sphereAttributes;
 
-HitRecord *Sphere::intersect(const Sphere *spheres, size_t count, glm::vec3 &rayDir, glm::vec3 &rayOrigin, HitRecord &ret)
+HitRecord *Sphere::intersect(glm::vec3 &rayDir, glm::vec3 &rayOrigin, HitRecord &ret)
 {
     ret.distSq = g_frustrumMax * g_frustrumMax;
     float distSq = g_frustrumMax * g_frustrumMax;
@@ -20,14 +30,19 @@ HitRecord *Sphere::intersect(const Sphere *spheres, size_t count, glm::vec3 &ray
     float t0;
     float t1;
 
-    for (unsigned i = 0; i < count; i++)
+
+    for (unsigned i = 0; i < g_numSpheres; i++)
     {
-        const Sphere& sphere = spheres[i];
-        L = sphere.m_position - rayOrigin;
+        unsigned laneIdx = i / c_sphereLaneSz;
+        unsigned sphereIdx = i % c_sphereLaneSz;
+
+        const SphereLane& lane = g_sphereLanes[laneIdx];
+        glm::vec3 pos = glm::vec3(lane.x[sphereIdx], lane.y[sphereIdx], lane.z[sphereIdx]);
+        L = pos - rayOrigin;
         distSq = glm::dot(L, L);
 
         // Do not accept hits from within a sphere
-        if (distSq <= sphere.m_radiusSq)
+        if (distSq <= lane.radiusSq[sphereIdx])
         {
             goto Miss;
         }
@@ -36,12 +51,12 @@ HitRecord *Sphere::intersect(const Sphere *spheres, size_t count, glm::vec3 &ray
         d2 = distSq - tca * tca;
 
         // closest point is outside the radius
-        if (d2 > sphere.m_radiusSq)
+        if (d2 > lane.radiusSq[sphereIdx])
         {
             goto Miss;
         }
 
-        thc = sqrt(sphere.m_radiusSq - d2); 
+        thc = sqrt(lane.radiusSq[sphereIdx] - d2); 
         t0 = tca - thc; 
         t1 = tca + thc;
 
@@ -73,26 +88,19 @@ HitRecord *Sphere::intersect(const Sphere *spheres, size_t count, glm::vec3 &ray
     return &ret;
 }
 
-Sphere::Sphere(const Sphere::_Create &createStruct)
-{
-    m_position = createStruct.position;
-    m_radiusSq = createStruct.radius * createStruct.radius;
-}
-
 unsigned Sphere::create(const Sphere::_Create &createStruct)
 {
-    g_spheres.push_back(createStruct);
+    unsigned sphereIdx = (g_numSpheres) % c_sphereLaneSz;
+    if (sphereIdx == 0)
+    {
+        g_sphereLanes.emplace_back();
+    }
+    auto &lane = g_sphereLanes.back();
+    lane.x[sphereIdx] = createStruct.position.x;
+    lane.y[sphereIdx] = createStruct.position.y;
+    lane.z[sphereIdx] = createStruct.position.z;
+    lane.radiusSq[sphereIdx] = createStruct.radius * createStruct.radius;
+
     g_sphereAttributes.emplace_back(createStruct.attributes);
-    return g_spheres.size() - 1;
-}
-
-Sphere *Sphere::getSphere(unsigned index)
-{
-    return &g_spheres[index];
-}
-
-const Sphere *Sphere::getAllSpheres(unsigned &count)
-{
-    count = g_spheres.size();
-    return g_spheres.data();
+    return ++g_numSpheres;
 }
