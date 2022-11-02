@@ -35,13 +35,13 @@ HitRecord *Sphere::intersect(glm::vec3 &rayDir, glm::vec3 &rayOrigin, HitRecord 
     ret.distSq = g_frustrumMax * g_frustrumMax;
     unsigned closestSphereIdx = UINT32_MAX;
     static const __m256 zeros = _mm256_setzero_ps();
-    uint32_t llm[c_sphereLaneSz] __attribute__((aligned(32))) = {INT32_MAX};
+    float llm[c_sphereLaneSz] __attribute__((aligned(32))) = {(float)INT32_MAX};
     unsigned sphereRemainder = g_numSpheres % c_sphereLaneSz;
     for (unsigned i = sphereRemainder; i < c_sphereLaneSz; i++)
     {
         llm[i] = 0;
     }
-    __m256i mmx_lastLaneMask = _mm256_setr_epi32 (llm[0], llm[1], llm[2], llm[3], llm[4], llm[5], llm[6], llm[7]);
+    __m256 mmx_lastLaneMask = _mm256_load_ps(llm);
 
     for (unsigned i = 0; i < g_sphereLanes.size(); i++)
     {
@@ -81,6 +81,12 @@ HitRecord *Sphere::intersect(glm::vec3 &rayDir, glm::vec3 &rayOrigin, HitRecord 
         __m256 mmx_tca = avxDot(mmx_lx, mmx_ly, mmx_lz, mmx_rdx, mmx_rdy, mmx_rdz);
         __m256 mmx_tcaSq = _mm256_mul_ps(mmx_tca, mmx_tca);
         __m256 mmx_d2 = _mm256_sub_ps(mmx_distSq, mmx_tcaSq);
+
+        // mask off results for the last lane if it is not full
+        if (sphereRemainder && i == g_sphereLanes.size() - 1)
+        {
+            mmx_distSq = _mm256_and_ps(mmx_distSq, mmx_lastLaneMask);
+        }
 
         // check if closest point is outside all spheres' radii
         __m256 mmx_rayMissSphere = _mm256_cmp_ps(mmx_d2, mmx_radSq, _CMP_GE_OS);
