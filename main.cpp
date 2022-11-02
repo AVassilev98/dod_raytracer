@@ -96,7 +96,7 @@ int main()
 {
     srand(time(NULL));
     std::vector<unsigned> sphereIds;
-    generateSpheres(sphereIds, 1000);
+    generateSpheres(sphereIds, 8192);
     uint8_t *imageData = (uint8_t *)calloc(g_width * g_height * STBI_rgb, sizeof(uint8_t));
 
     unsigned numCores = get_nprocs();

@@ -3,6 +3,7 @@
   set(CMAKE_CXX_STANDARD 20 CACHE STRING "C++ standard to conform to")
   set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
   set(CMAKE_CXX_COMPILER g++-10)
+  add_compile_options(-march=native)
 
   project(
     DodRaytracer
