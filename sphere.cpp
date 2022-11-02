@@ -2,6 +2,7 @@
 #include "common_defs.h"
 #include <cstdint>
 #include <immintrin.h>
+#include <cstring>
 #include <vector>
 #include "immintrin.h"
 
@@ -35,11 +36,11 @@ HitRecord *Sphere::intersect(glm::vec3 &rayDir, glm::vec3 &rayOrigin, HitRecord 
     ret.distSq = g_frustrumMax * g_frustrumMax;
     unsigned closestSphereIdx = UINT32_MAX;
     static const __m256 zeros = _mm256_setzero_ps();
-    float llm[c_sphereLaneSz] __attribute__((aligned(32))) = {(float)INT32_MAX};
+    float llm[c_sphereLaneSz] __attribute__((aligned(32))) = {};
     unsigned sphereRemainder = g_numSpheres % c_sphereLaneSz;
-    for (unsigned i = sphereRemainder; i < c_sphereLaneSz; i++)
+    for (unsigned i = 0; i < sphereRemainder; i++)
     {
-        llm[i] = 0;
+        memset(&llm[i], 0xFFFFFFFF, sizeof(float));
     }
     __m256 mmx_lastLaneMask = _mm256_load_ps(llm);
 
