@@ -90,12 +90,15 @@ HitRecord *Sphere::intersect(glm::vec3 &rayDir, glm::vec3 &rayOrigin, HitRecord 
         }
 
         // check if closest point is outside all spheres' radii
-        __m256 mmx_rayMissSphere = _mm256_cmp_ps(mmx_d2, mmx_radSq, _CMP_GE_OS);
+        __m256 mmx_rayMissSphere = _mm256_cmp_ps(mmx_d2, mmx_radSq, _CMP_LT_OS);
         mask = _mm256_movemask_ps(mmx_rayMissSphere);
-        if (mask == 0xff)
+        if (mask == 0)
         {
             continue;
         }
+        
+        // mask off the rays that did not hit the sphere
+        mmx_distSq = _mm256_and_ps(mmx_distSq, mmx_rayMissSphere);
 
         __m256 mmx_thcSq = _mm256_sub_ps(mmx_radSq, mmx_d2);
         __m256 mmx_thc = _mm256_sqrt_ps(mmx_thcSq);
@@ -104,13 +107,13 @@ HitRecord *Sphere::intersect(glm::vec3 &rayDir, glm::vec3 &rayOrigin, HitRecord 
 
 
         // Check if the ray is going backwards
-        __m256 mmx_t0lz = _mm256_cmp_ps(mmx_t0, zeros, _CMP_LT_OS);
-        __m256 mmx_t1lz = _mm256_cmp_ps(mmx_t1, zeros, _CMP_LT_OS);
+        __m256 mmx_t0lz = _mm256_cmp_ps(mmx_t0, zeros, _CMP_GE_OS);
+        __m256 mmx_t1lz = _mm256_cmp_ps(mmx_t1, zeros, _CMP_GE_OS);
         int t0Mask = _mm256_movemask_ps(mmx_t0lz);
         int t1Mask = _mm256_movemask_ps(mmx_t1lz);
 
         // sphere is behind the ray
-        if (t0Mask == 0xff && t1Mask == 0xff)
+        if (t0Mask == 0 && t1Mask == 0)
         {
             continue;
         }
