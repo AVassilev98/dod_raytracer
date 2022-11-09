@@ -1,3 +1,4 @@
+#include "glm/common.hpp"
 #include "glm/fwd.hpp"
 #include "glm/geometric.hpp"
 #include "glm/glm.hpp"
@@ -20,9 +21,9 @@ void generateSpheres(std::vector<unsigned> &sphereIds, unsigned numSpheres)
     float step = 0.1f;
     for (unsigned i = 0; i < numSpheres; i++)
     {
-        uint8_t r = rand() % UINT8_MAX;
-        uint8_t g = rand() % UINT8_MAX;
-        uint8_t b = rand() % UINT8_MAX;
+        float r = ((float) rand() / RAND_MAX);
+        float g = ((float) rand() / RAND_MAX);
+        float b = ((float) rand() / RAND_MAX);
         float radius = 1.0f;
 
         float dist_x = ((float) rand() / RAND_MAX) * 30.0f * g_ratio - 15.0f * g_ratio;
@@ -34,7 +35,7 @@ void generateSpheres(std::vector<unsigned> &sphereIds, unsigned numSpheres)
             .radius = radius,
             .attributes = 
             {
-                glm::u8vec3(r, g, b)
+                glm::vec3(r, g, b)
             },
         };
 
@@ -51,19 +52,39 @@ struct RayTraceData
 
 float shadeAmbientFactor()
 {
-    return 0.95f;
+    return 0.2f;
 }
 
 float shadeDiffuseFactor(HitRecord &hr, glm::vec3 &rayDir, glm::vec3 &rayOrigin)
 {
-    const static glm::vec3 lightPos{-20, 20, 0};
+    const static glm::vec3 lightPos{0, 100, 0};
+    
     glm::vec3 hitPoint = hr.t * rayDir + rayOrigin;
     glm::vec3 surfaceNormal = glm::normalize(hitPoint - hr.spherePos);
     glm::vec3 lightDir = glm::normalize(lightPos - hr.spherePos);
     float distance = glm::distance(lightPos, hr.spherePos);
+    float factor = std::max(0.0f, glm::dot(surfaceNormal, lightDir)) / M_PI;
 
-    // std::cout << glm::dot(surfaceNormal, lightDir) << std::endl;
-    return std::clamp(glm::dot(surfaceNormal, lightDir), 0.0f, 1.0f);
+    return factor;
+}
+
+static inline glm::u8vec3 toOutputChannelType(glm::vec3& in)
+{
+    return glm::clamp(in * 255.0f, glm::vec3(0), glm::vec3(255));
+}
+
+float shadeSpecularFactor(HitRecord &hr, glm::vec3 &rayDir, glm::vec3 &rayOrigin)
+{
+    const static glm::vec3 lightPos{0, 100, 0};
+    
+    glm::vec3 hitPoint = hr.t * rayDir + rayOrigin;
+    glm::vec3 surfaceNormal = glm::normalize(hitPoint - hr.spherePos);
+    glm::vec3 lightDir = glm::normalize(lightPos - hr.spherePos);
+    glm::vec3 reflectedLightDir = glm::reflect(lightDir, surfaceNormal);
+
+    float factor = glm::pow(glm::max(0.0f, glm::dot(reflectedLightDir, rayDir)), 10);
+
+    return factor;
 }
 
 
@@ -92,8 +113,10 @@ void rayTrace(RayTraceData data)
             {
                 float ambientFactor = shadeAmbientFactor();
                 float diffuseFactor = shadeDiffuseFactor(*hr_p, rayNorm, rayOrigin);
-                glm::vec3 finalColor = hr.color * ambientFactor * diffuseFactor;
-                glm::u8vec3 finalColorU8 = finalColor;
+                float specularFactor = shadeSpecularFactor(*hr_p, rayNorm, rayOrigin);
+                float totalFactor = ambientFactor + diffuseFactor + specularFactor;
+                glm::vec3 finalColor = hr.color * totalFactor;
+                glm::u8vec3 finalColorU8 = toOutputChannelType(finalColor);
 
                 for (unsigned k = 0; k < STBI_rgb; k++)
                 {
@@ -114,7 +137,7 @@ int main()
 {
     srand(time(NULL));
     std::vector<unsigned> sphereIds;
-    generateSpheres(sphereIds, 1024);
+    generateSpheres(sphereIds, 65535);
     uint8_t *imageData = (uint8_t *)calloc(g_width * g_height * STBI_rgb, sizeof(uint8_t));
 
     unsigned numCores = get_nprocs();

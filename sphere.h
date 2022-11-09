@@ -11,7 +11,7 @@ class Sphere
     public:
         struct Attributes
         {
-            glm::u8vec3 color;
+            glm::vec3 color;
         };
 
         struct _Create
