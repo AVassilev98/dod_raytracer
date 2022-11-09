@@ -1,5 +1,8 @@
+#include "glm/fwd.hpp"
+#include "glm/geometric.hpp"
 #include "glm/glm.hpp"
 #include "sphere.h"
+#include <algorithm>
 #include <cstdint>
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -14,16 +17,17 @@
 
 void generateSpheres(std::vector<unsigned> &sphereIds, unsigned numSpheres)
 {
+    float step = 0.1f;
     for (unsigned i = 0; i < numSpheres; i++)
     {
         uint8_t r = rand() % UINT8_MAX;
         uint8_t g = rand() % UINT8_MAX;
         uint8_t b = rand() % UINT8_MAX;
-        float radius = 0.1f;
+        float radius = 1.0f;
 
-        float dist_x = ((float) rand() / RAND_MAX) * 2.0f * g_ratio - 1.0f;
-        float dist_y = ((float) rand() / RAND_MAX) * 2.0f - 1.0f;
-        float dist_z = ((float) rand() / RAND_MAX) * 500.0f + 500.0f;
+        float dist_x = ((float) rand() / RAND_MAX) * 30.0f * g_ratio - 15.0f * g_ratio;
+        float dist_y = ((float) rand() / RAND_MAX) * 30.0f - 15.0f;
+        float dist_z = ((float) rand() / RAND_MAX) * 20.0f + 10.0f;
 
         Sphere::_Create createStruct {
             .position = glm::vec3(dist_x, dist_y, dist_z),
@@ -45,58 +49,72 @@ struct RayTraceData
     unsigned endRow;
 };
 
-
-void *rayTrace(RayTraceData data)
+float shadeAmbientFactor()
 {
-    glm::vec3 rayOrigin = {-1, 1, 0};
-    glm::vec3 rayDir = {0, 0, 1};
-    std::cout << "startRow " << data.startRow << " endRow " << data.endRow << std::endl;
+    return 0.95f;
+}
 
+float shadeDiffuseFactor(HitRecord &hr, glm::vec3 &rayDir, glm::vec3 &rayOrigin)
+{
+    const static glm::vec3 lightPos{-20, 20, 0};
+    glm::vec3 hitPoint = hr.t * rayDir + rayOrigin;
+    glm::vec3 surfaceNormal = glm::normalize(hitPoint - hr.spherePos);
+    glm::vec3 lightDir = glm::normalize(lightPos - hr.spherePos);
+    float distance = glm::distance(lightPos, hr.spherePos);
+
+    // std::cout << glm::dot(surfaceNormal, lightDir) << std::endl;
+    return std::clamp(glm::dot(surfaceNormal, lightDir), 0.0f, 1.0f);
+}
+
+
+void rayTrace(RayTraceData data)
+{
+    glm::vec3 rayOrigin = {0, 0, 0};
+    glm::vec3 rayDir = {-g_ratio, 1.0f, 1};
 
     constexpr float widthStep = 2.0f * g_ratio / g_width;
     constexpr float heightStep = 2.0f / g_height;
-
-    unsigned sphereCount;
     
     HitRecord hr;
     
     unsigned imageIdx = data.startRow * g_width * STBI_rgb;
-    rayOrigin.y -= heightStep * data.startRow;
+    rayDir.y -= heightStep * data.startRow;
 
     for (unsigned i = data.startRow; i < data.endRow; i++)
     {
-        rayOrigin.x = -1;
+        rayDir.x = -g_ratio;
         for (unsigned j = 0; j < g_width; j++)
         {
-            HitRecord *hr_p = Sphere::intersect(rayDir, rayOrigin, hr);
+            glm::vec3 rayNorm = rayDir;
+            rayNorm = glm::normalize(rayNorm);
+            HitRecord *hr_p = Sphere::intersect(rayNorm, rayOrigin, hr);
             if (hr_p)
             {
-                for (unsigned k = 0; k < STBI_rgb; k++)
-                {
-                    data.imageData[imageIdx++] = hr.color[k];
-                }
-            }
-            else
-            {
-                for (unsigned k = 0; k < STBI_rgb; k++)
-                {
-                    data.imageData[imageIdx++] = 0;
-                }
-            }
-            
-            rayOrigin.x += widthStep;
-        }
-        rayOrigin.y -= heightStep;
-    }
+                float ambientFactor = shadeAmbientFactor();
+                float diffuseFactor = shadeDiffuseFactor(*hr_p, rayNorm, rayOrigin);
+                glm::vec3 finalColor = hr.color * ambientFactor * diffuseFactor;
+                glm::u8vec3 finalColorU8 = finalColor;
 
-    return nullptr;
+                for (unsigned k = 0; k < STBI_rgb; k++)
+                {
+                    data.imageData[imageIdx++] = finalColorU8[k];
+                }
+            }
+            else 
+            {
+                imageIdx += STBI_rgb;
+            }
+            rayDir.x += widthStep;
+        }
+        rayDir.y -= heightStep;
+    }
 }
 
 int main()
 {
     srand(time(NULL));
     std::vector<unsigned> sphereIds;
-    generateSpheres(sphereIds, 8192);
+    generateSpheres(sphereIds, 1024);
     uint8_t *imageData = (uint8_t *)calloc(g_width * g_height * STBI_rgb, sizeof(uint8_t));
 
     unsigned numCores = get_nprocs();
