@@ -21,7 +21,7 @@ class Sphere
             Attributes attributes;
         };
 
-        static HitRecord *intersect(glm::vec3 &rayDir, glm::vec3 &rayOrigin, HitRecord &ret);
+        static HitRecord *intersect(const glm::vec3 &rayDir, const glm::vec3 &rayOrigin, HitRecord &ret);
         static unsigned create(const _Create &);
         static Sphere *getSphere(unsigned index);
 

@@ -4,6 +4,7 @@
 #include <immintrin.h>
 #include <cstring>
 #include <vector>
+#include "glm/geometric.hpp"
 #include "immintrin.h"
 
 constexpr unsigned c_sphereLaneSz = 8;
@@ -31,7 +32,7 @@ static inline __attribute__((always_inline)) __m256 avxDot(const __m256 x, const
     return mmx_res;
 }
 
-HitRecord *Sphere::intersect(glm::vec3 &rayDir, glm::vec3 &rayOrigin, HitRecord &ret)
+HitRecord *Sphere::intersect(const glm::vec3 &rayDir, const glm::vec3 &rayOrigin, HitRecord &ret)
 {
     ret.t = g_frustrumMax * g_frustrumMax;
     unsigned closestSphereIdx = UINT32_MAX;
@@ -172,6 +173,8 @@ HitRecord *Sphere::intersect(glm::vec3 &rayDir, glm::vec3 &rayOrigin, HitRecord 
 
     ret.color = g_sphereAttributes[closestSphereIdx].color;
     ret.spherePos = glm::vec3(g_sphereLanes[laneIndex].x[sphereIdx], g_sphereLanes[laneIndex].y[sphereIdx], g_sphereLanes[laneIndex].z[sphereIdx]);
+    ret.hitPoint = rayOrigin + rayDir * ret.t;
+    ret.hitNormal = glm::normalize(ret.hitPoint - ret.spherePos);
 
     return &ret;
 }

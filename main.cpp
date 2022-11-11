@@ -3,6 +3,7 @@
 #include "glm/geometric.hpp"
 #include "glm/glm.hpp"
 #include "sphere.h"
+#include "light.h"
 #include <algorithm>
 #include <cstdint>
 #define STB_IMAGE_IMPLEMENTATION
@@ -18,7 +19,6 @@
 
 void generateSpheres(std::vector<unsigned> &sphereIds, unsigned numSpheres)
 {
-    float step = 0.1f;
     for (unsigned i = 0; i < numSpheres; i++)
     {
         float r = ((float) rand() / RAND_MAX);
@@ -28,7 +28,7 @@ void generateSpheres(std::vector<unsigned> &sphereIds, unsigned numSpheres)
 
         float dist_x = ((float) rand() / RAND_MAX) * 30.0f * g_ratio - 15.0f * g_ratio;
         float dist_y = ((float) rand() / RAND_MAX) * 30.0f - 15.0f;
-        float dist_z = ((float) rand() / RAND_MAX) * 20.0f + 10.0f;
+        float dist_z = ((float) rand() / RAND_MAX) * 20.0f;
 
         Sphere::_Create createStruct {
             .position = glm::vec3(dist_x, dist_y, dist_z),
@@ -55,16 +55,10 @@ float shadeAmbientFactor()
     return 0.2f;
 }
 
-float shadeDiffuseFactor(HitRecord &hr, glm::vec3 &rayDir, glm::vec3 &rayOrigin)
+static inline float shadeDiffuseFactor(const Light &light, const HitRecord &hr)
 {
-    const static glm::vec3 lightPos{0, 100, 0};
-    
-    glm::vec3 hitPoint = hr.t * rayDir + rayOrigin;
-    glm::vec3 surfaceNormal = glm::normalize(hitPoint - hr.spherePos);
-    glm::vec3 lightDir = glm::normalize(lightPos - hr.spherePos);
-    float distance = glm::distance(lightPos, hr.spherePos);
-    float factor = std::max(0.0f, glm::dot(surfaceNormal, lightDir)) / M_PI;
-
+    glm::vec3 lightDir = glm::normalize(light.position - hr.spherePos);
+    float factor = std::max(0.0f, glm::dot(hr.hitNormal, lightDir));
     return factor;
 }
 
@@ -73,20 +67,56 @@ static inline glm::u8vec3 toOutputChannelType(glm::vec3& in)
     return glm::clamp(in * 255.0f, glm::vec3(0), glm::vec3(255));
 }
 
-float shadeSpecularFactor(HitRecord &hr, glm::vec3 &rayDir, glm::vec3 &rayOrigin)
+static inline float shadeSpecularFactor(const Light &light, const HitRecord &hr, const glm::vec3 rayDir)
 {
-    const static glm::vec3 lightPos{0, 100, 0};
-    
-    glm::vec3 hitPoint = hr.t * rayDir + rayOrigin;
-    glm::vec3 surfaceNormal = glm::normalize(hitPoint - hr.spherePos);
-    glm::vec3 lightDir = glm::normalize(lightPos - hr.spherePos);
-    glm::vec3 reflectedLightDir = glm::reflect(lightDir, surfaceNormal);
+    glm::vec3 lightDir = glm::normalize(light.position - hr.spherePos);
+    glm::vec3 reflectedLightDir = glm::reflect(lightDir, hr.hitNormal);
 
-    float factor = glm::pow(glm::max(0.0f, glm::dot(reflectedLightDir, rayDir)), 10);
-
+    float factor = glm::pow(glm::max(0.0f, glm::dot(reflectedLightDir, rayDir)), 7);
     return factor;
 }
 
+static bool canSeeLight(const Light &light, const glm::vec3 &hitPoint)
+{
+    glm::vec3 lightDir = glm::normalize(hitPoint - light.position);
+    HitRecord hr;
+    HitRecord *out = Sphere::intersect(lightDir, light.position, hr);
+    if (!out)
+    {
+        return false;
+    }
+    glm::vec3 distToPoint = out->hitPoint - hitPoint;
+    if (glm::dot(distToPoint, distToPoint) < 0.001f)
+    {
+        return true;
+    }
+    return false;
+}
+
+float getLightingFactor(const std::vector<Light> &lights, const HitRecord &hr, const glm::vec3 &rayDir)
+{
+    float lightingFactor = shadeAmbientFactor();
+    for (const auto &light : lights)
+    {
+        if (!canSeeLight(light, hr.hitPoint))
+        {
+            continue;
+        }
+
+        // quadratic intensity fallof with distance
+        glm::vec3 distToLight = light.position - hr.hitPoint;
+        float distanceFactor = light.intensity / glm::dot(distToLight, distToLight);
+
+        float singleLightFactor = 0.0f;
+        singleLightFactor += shadeDiffuseFactor(light, hr);
+        singleLightFactor += shadeSpecularFactor(light, hr, rayDir);
+        singleLightFactor *= distanceFactor;
+
+        lightingFactor += singleLightFactor;
+    }
+
+    return lightingFactor;
+}
 
 void rayTrace(RayTraceData data)
 {
@@ -97,7 +127,13 @@ void rayTrace(RayTraceData data)
     constexpr float heightStep = 2.0f / g_height;
     
     HitRecord hr;
-    
+
+    std::vector<Light> lights;
+    lights.push_back({{0, 0, 0}, 10.0f});
+    lights.push_back({{0, 10, 10}, 10.0f});
+    lights.push_back({{-8, -5, 5}, 10.0f});
+    lights.push_back({{0, 0, 10}, 10.0f});
+
     unsigned imageIdx = data.startRow * g_width * STBI_rgb;
     rayDir.y -= heightStep * data.startRow;
 
@@ -106,27 +142,35 @@ void rayTrace(RayTraceData data)
         rayDir.x = -g_ratio;
         for (unsigned j = 0; j < g_width; j++)
         {
-            glm::vec3 rayNorm = rayDir;
-            rayNorm = glm::normalize(rayNorm);
-            HitRecord *hr_p = Sphere::intersect(rayNorm, rayOrigin, hr);
-            if (hr_p)
-            {
-                float ambientFactor = shadeAmbientFactor();
-                float diffuseFactor = shadeDiffuseFactor(*hr_p, rayNorm, rayOrigin);
-                float specularFactor = shadeSpecularFactor(*hr_p, rayNorm, rayOrigin);
-                float totalFactor = ambientFactor + diffuseFactor + specularFactor;
-                glm::vec3 finalColor = hr.color * totalFactor;
-                glm::u8vec3 finalColorU8 = toOutputChannelType(finalColor);
+            const static unsigned recursionDepth = 5;
+            
+            glm::vec3 finalColor = glm::vec3(0);
+            rayOrigin = {0, 0, 0};
+            glm::vec3 rayNorm = glm::normalize(rayDir);
 
-                for (unsigned k = 0; k < STBI_rgb; k++)
-                {
-                    data.imageData[imageIdx++] = finalColorU8[k];
-                }
-            }
-            else 
+            for (unsigned i = 0; i < recursionDepth; i++)
             {
-                imageIdx += STBI_rgb;
+                HitRecord *hr_p = Sphere::intersect(rayNorm, rayOrigin, hr);
+                if (!hr_p)
+                {
+                    break;
+                }
+                float weight = 1.0f / (i + 1);
+
+                float lightingFactor = getLightingFactor(lights, hr, rayDir);
+                glm::vec3 color = hr.color * lightingFactor;
+                finalColor = ((1.0f - weight) * finalColor) + (weight * color);
+
+                rayOrigin = hr.hitPoint;
+                rayNorm = glm::reflect(rayNorm, hr.hitNormal);
             }
+
+            glm::u8vec3 finalColorU8 = toOutputChannelType(finalColor);
+            for (unsigned k = 0; k < STBI_rgb; k++)
+            {
+                data.imageData[imageIdx++] = finalColorU8[k];
+            }
+
             rayDir.x += widthStep;
         }
         rayDir.y -= heightStep;
@@ -137,7 +181,7 @@ int main()
 {
     srand(time(NULL));
     std::vector<unsigned> sphereIds;
-    generateSpheres(sphereIds, 65535);
+    generateSpheres(sphereIds, 1024);
     uint8_t *imageData = (uint8_t *)calloc(g_width * g_height * STBI_rgb, sizeof(uint8_t));
 
     unsigned numCores = get_nprocs();
