@@ -22,6 +22,7 @@ class Sphere
         };
 
         static HitRecord *intersect(const glm::vec3 &rayDir, const glm::vec3 &rayOrigin, HitRecord &ret);
+        static HitRecord *intersect_non_vectorized(const glm::vec3 &rayDir, const glm::vec3 &rayOrigin, HitRecord &ret);
         static unsigned create(const _Create &);
         static Sphere *getSphere(unsigned index);
 

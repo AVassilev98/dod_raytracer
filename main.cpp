@@ -118,6 +118,33 @@ float getLightingFactor(const std::vector<Light> &lights, const HitRecord &hr, c
     return lightingFactor;
 }
 
+void compareHitRecords(const HitRecord *hrA, const HitRecord *hrB, unsigned row, unsigned col, unsigned depth)
+{
+    constexpr float epsilon = 0.01f;
+    if (!hrA && !hrB)
+    {
+        // printf("(%4u,%4u,%4u) - OK\n", row, col, depth);
+        return;
+    }
+    if (!hrA)
+    {
+        printf("(%4u,%4u,%4u) - RECORD A MISS - RECORD B HIT\n", row, col, depth);
+        return;
+    }
+    if (!hrB)
+    {
+        printf("(%4u,%4u,%4u) - RECORD A HIT - RECORD B MISS\n", row, col, depth);
+        return;
+    }
+    if (fabs(hrA->t - hrB->t) > epsilon)
+    {
+        printf("(%4u,%4u,%4u) - T mismatch -- A: %f, B: %f\n", row, col, depth, hrA->t, hrB->t);
+        return;
+    }
+
+    // printf("(%4u,%4u,%4u) - OK\n", row, col, depth);
+}
+
 void rayTrace(RayTraceData data)
 {
     glm::vec3 rayOrigin = {0, 0, 0};
@@ -148,14 +175,14 @@ void rayTrace(RayTraceData data)
             rayOrigin = {0, 0, 0};
             glm::vec3 rayNorm = glm::normalize(rayDir);
 
-            for (unsigned i = 0; i < recursionDepth; i++)
+            for (unsigned k = 0; k < recursionDepth; k++)
             {
                 HitRecord *hr_p = Sphere::intersect(rayNorm, rayOrigin, hr);
                 if (!hr_p)
                 {
                     break;
                 }
-                float weight = 1.0f / (i + 1);
+                float weight = 1.0f / (k + 1);
 
                 float lightingFactor = getLightingFactor(lights, hr, rayDir);
                 glm::vec3 color = hr.color * lightingFactor;

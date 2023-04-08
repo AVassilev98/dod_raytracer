@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <immintrin.h>
 #include <cstring>
+#include <limits>
 #include <vector>
 #include "glm/geometric.hpp"
 #include "immintrin.h"
@@ -38,8 +39,6 @@ HitRecord *Sphere::intersect(const glm::vec3 &rayDir, const glm::vec3 &rayOrigin
     unsigned closestSphereIdx = UINT32_MAX;
     static const __m256 zeros = _mm256_setzero_ps();
     float llm[c_sphereLaneSz] __attribute__((aligned(32))) = {};
-    float mask_val = 0;
-    memset(&mask_val, 0xFFFFFFFF, sizeof(float));
     unsigned sphereRemainder = g_numSpheres % c_sphereLaneSz;
     for (unsigned i = 0; i < sphereRemainder; i++)
     {
@@ -52,7 +51,7 @@ HitRecord *Sphere::intersect(const glm::vec3 &rayDir, const glm::vec3 &rayOrigin
         const auto &sphereLane = g_sphereLanes[i];
         
         // indicates entry is valid
-        __m256 mmx_validMask = _mm256_set1_ps(mask_val);
+        __m256 mmx_validMask = _mm256_set1_ps(-0.0f);
 
         // fill avx registers with our sphere lane
         __m256 mmx_sx = _mm256_load_ps(sphereLane.x);
@@ -80,7 +79,7 @@ HitRecord *Sphere::intersect(const glm::vec3 &rayDir, const glm::vec3 &rayOrigin
             continue;
         }
         mmx_validMask = _mm256_and_ps(mmx_rayInSphere, mmx_validMask);
-        
+
         // broadcast rayDir vec3 in to avx registers
         __m256 mmx_rdx = _mm256_set1_ps(rayDir.x);
         __m256 mmx_rdy = _mm256_set1_ps(rayDir.y);
@@ -117,24 +116,15 @@ HitRecord *Sphere::intersect(const glm::vec3 &rayDir, const glm::vec3 &rayOrigin
         __m256 mmx_t0lz = _mm256_cmp_ps(mmx_t0, zeros, _CMP_GE_OS);
         __m256 mmx_t1lz = _mm256_cmp_ps(mmx_t1, zeros, _CMP_GE_OS);
         __m256 mmx_tCombinedMask = _mm256_and_ps(mmx_t0lz, mmx_t1lz);
-        int t0Mask = _mm256_movemask_ps(mmx_t0lz);
-        int t1Mask = _mm256_movemask_ps(mmx_t1lz);
+        int tMask = _mm256_movemask_ps(mmx_tCombinedMask);
 
-        // sphere is behind the ray
-        if (t0Mask == 0 && t1Mask == 0)
+        // sphere is either behind or surrounding the ray
+        if (tMask == 0)
         {
             continue;
         }
         mmx_validMask = _mm256_and_ps(mmx_validMask, mmx_tCombinedMask);
         int validMask = _mm256_movemask_ps(mmx_validMask);
-
-        __m256 mmx_retDistSq = _mm256_set1_ps(ret.t);
-        __m256 hit = _mm256_cmp_ps(mmx_distSq, mmx_retDistSq, _CMP_LT_OS);
-        int hitMask = _mm256_movemask_ps(hit);
-        if (hitMask == 0)
-        {
-            continue;
-        }
 
         __m256 mmx_tmin = _mm256_min_ps(mmx_t0, mmx_t1);
         float distSq[c_sphereLaneSz] __attribute__((aligned (32)));
@@ -148,7 +138,7 @@ HitRecord *Sphere::intersect(const glm::vec3 &rayDir, const glm::vec3 &rayOrigin
 
         for (unsigned j = 0; j < c_sphereLaneSz; j++)
         {
-            if ((validMask >> j) & 1 && tmin[j] < minDist)
+            if (((validMask >> j) & 1) && (tmin[j] < minDist))
             {
                 minDist = tmin[j];
                 minDistIdx = j;
@@ -163,6 +153,70 @@ HitRecord *Sphere::intersect(const glm::vec3 &rayDir, const glm::vec3 &rayOrigin
     }
 
     // no intersection
+    if (closestSphereIdx == UINT32_MAX)
+    {
+        return nullptr;
+    }
+
+    unsigned laneIndex = closestSphereIdx / c_sphereLaneSz;
+    unsigned sphereIdx = closestSphereIdx % c_sphereLaneSz;
+
+    ret.color = g_sphereAttributes[closestSphereIdx].color;
+    ret.spherePos = glm::vec3(g_sphereLanes[laneIndex].x[sphereIdx], g_sphereLanes[laneIndex].y[sphereIdx], g_sphereLanes[laneIndex].z[sphereIdx]);
+    ret.hitPoint = rayOrigin + rayDir * ret.t;
+    ret.hitNormal = glm::normalize(ret.hitPoint - ret.spherePos);
+
+    return &ret;
+}
+
+HitRecord *Sphere::intersect_non_vectorized(const glm::vec3 &rayDir, const glm::vec3 &rayOrigin, HitRecord &ret)
+{
+    constexpr float infinity = std::numeric_limits<float>::infinity();
+    ret.t = std::numeric_limits<float>::infinity();
+    unsigned closestSphereIdx = UINT32_MAX;
+
+    for (unsigned i = 0; i < g_sphereLanes.size(); i++)
+    {
+        for (unsigned j = 0; j < c_sphereLaneSz; j++)
+        {
+            unsigned idx = i * c_sphereLaneSz + j;
+            if (idx >= g_numSpheres)
+            {
+                break;
+            }
+
+            const float &xPos = g_sphereLanes[i].x[j];
+            const float &yPos = g_sphereLanes[i].y[j];
+            const float &zPos = g_sphereLanes[i].z[j];
+
+            glm::vec3 center = glm::vec3(xPos, yPos, zPos);
+            float radiusSq = g_sphereLanes[i].radiusSq[j];
+
+
+            glm::vec3 L = center - rayOrigin;
+            float tca = glm::dot(L, rayDir);
+            if (tca < 0) continue;;
+            float d2 = glm::dot(L, L) - tca * tca;
+            if (d2 > radiusSq) continue;;
+            float thc = sqrt(radiusSq - d2);
+            float t0 = tca - thc;
+            float t1 = tca + thc;
+            float tmin = fmin(t0, t1);
+
+            if (t0 < 0) {
+                t0 = t1; // if t0 is negative, let's use t1 instead
+                if (t0 < 0) continue; // both t0 and t1 are negative
+            }
+
+            tmin = t0;
+            if (tmin < ret.t)
+            {
+                ret.t = tmin;
+                closestSphereIdx = i * c_sphereLaneSz + j;
+            }
+        }
+    }
+
     if (closestSphereIdx == UINT32_MAX)
     {
         return nullptr;
