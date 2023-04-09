@@ -323,5 +323,5 @@ int main()
     }
     threads.clear();
     
-    // stbi_write_png("output.png", g_width, g_height, STBI_rgb, imageData, g_width * STBI_rgb);
+    stbi_write_png("output.png", g_width, g_height, STBI_rgb, imageData, g_width * STBI_rgb);
 }
