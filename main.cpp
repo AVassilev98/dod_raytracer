@@ -57,7 +57,7 @@ float shadeAmbientFactor()
 
 static inline float shadeDiffuseFactor(const Light &light, const HitRecord &hr)
 {
-    glm::vec3 lightDir = glm::normalize(light.position - hr.spherePos);
+    glm::vec3 lightDir = glm::normalize(light.position - hr.hitPoint);
     float factor = std::max(0.0f, glm::dot(hr.hitNormal, lightDir));
     return factor;
 }
@@ -69,7 +69,7 @@ static inline glm::u8vec3 toOutputChannelType(glm::vec3& in)
 
 static inline float shadeSpecularFactor(const Light &light, const HitRecord &hr, const glm::vec3 rayDir)
 {
-    glm::vec3 lightDir = glm::normalize(light.position - hr.spherePos);
+    glm::vec3 lightDir = glm::normalize(light.position - hr.hitPoint);
     glm::vec3 reflectedLightDir = glm::reflect(lightDir, hr.hitNormal);
 
     float factor = glm::pow(glm::max(0.0f, glm::dot(reflectedLightDir, rayDir)), 7);
@@ -78,19 +78,26 @@ static inline float shadeSpecularFactor(const Light &light, const HitRecord &hr,
 
 static bool canSeeLight(const Light &light, const glm::vec3 &hitPoint)
 {
-    glm::vec3 lightDir = glm::normalize(hitPoint - light.position);
+    glm::vec3 lightDir = light.position - hitPoint;
+    float lightDistance = glm::length(lightDir);
+    lightDir /= lightDistance;
+
     HitRecord hr;
-    HitRecord *out = Sphere::intersect(lightDir, light.position, hr);
-    if (!out)
+
+    Sphere::Intersect intersectParam = {
+        .rayDir = lightDir,
+        .rayOrigin = hitPoint + lightDir * 0.01f,
+        .returnOnAny = true,
+        .clippingDistance = lightDistance,
+        .record = hr,
+    };
+
+    bool hit = Sphere::intersect(intersectParam);
+    if (hit)
     {
         return false;
     }
-    glm::vec3 distToPoint = out->hitPoint - hitPoint;
-    if (glm::dot(distToPoint, distToPoint) < 0.001f)
-    {
-        return true;
-    }
-    return false;
+    return true;
 }
 
 float getLightingFactor(const std::vector<Light> &lights, const HitRecord &hr, const glm::vec3 &rayDir)
@@ -175,10 +182,16 @@ void rayTrace(RayTraceData data)
             rayOrigin = {0, 0, 0};
             glm::vec3 rayNorm = glm::normalize(rayDir);
 
+            Sphere::Intersect intersectParams {
+                .rayDir = rayNorm,
+                .rayOrigin = {0, 0, 0},
+                .record = hr
+            };
+
             for (unsigned k = 0; k < recursionDepth; k++)
             {
-                HitRecord *hr_p = Sphere::intersect(rayNorm, rayOrigin, hr);
-                if (!hr_p)
+                bool hit = Sphere::intersect(intersectParams);
+                if (!hit)
                 {
                     break;
                 }
