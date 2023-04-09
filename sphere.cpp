@@ -6,7 +6,6 @@
 #include <limits>
 #include <vector>
 #include "glm/geometric.hpp"
-#include "immintrin.h"
 
 // sphere.cpp implementation details
 namespace {
@@ -57,6 +56,11 @@ bool Sphere::intersect_impl(_Intersect &_in)
         
         // indicates entry is valid
         __m256 mmx_validMask = _mm256_set1_ps(-0.0f);
+        // mask off results for the last lane if it is not full
+        if (sphereRemainder && i == g_sphereLanes.size() - 1)
+        {
+            mmx_validMask = _mm256_and_ps(mmx_validMask, mmx_lastLaneMask);
+        }
 
         // fill avx registers with our sphere lane
         __m256 mmx_sx = _mm256_load_ps(sphereLane.x);
@@ -78,12 +82,12 @@ bool Sphere::intersect_impl(_Intersect &_in)
 
         // Check if all ray is in all spheres in lane
         __m256 mmx_rayInSphere = _mm256_cmp_ps(mmx_distSq, mmx_radSq, _CMP_GT_OS);
-        int mask = _mm256_movemask_ps(mmx_rayInSphere);
+        mmx_validMask = _mm256_and_ps(mmx_rayInSphere, mmx_validMask);
+        int mask = _mm256_movemask_ps(mmx_validMask);
         if (mask == 0)
         {
             continue;
         }
-        mmx_validMask = _mm256_and_ps(mmx_rayInSphere, mmx_validMask);
 
         // broadcast rayDir vec3 in to avx registers
         __m256 mmx_rdx = _mm256_set1_ps(_in.rayDir.x);
@@ -94,22 +98,14 @@ bool Sphere::intersect_impl(_Intersect &_in)
         __m256 mmx_tcaSq = _mm256_mul_ps(mmx_tca, mmx_tca);
         __m256 mmx_d2 = _mm256_sub_ps(mmx_distSq, mmx_tcaSq);
 
-        // mask off results for the last lane if it is not full
-        if (sphereRemainder && i == g_sphereLanes.size() - 1)
-        {
-            mmx_distSq = _mm256_and_ps(mmx_distSq, mmx_lastLaneMask);
-        }
-
         // check if closest point is outside all spheres' radii
         __m256 mmx_rayMissSphere = _mm256_cmp_ps(mmx_d2, mmx_radSq, _CMP_LT_OS);
-        mask = _mm256_movemask_ps(mmx_rayMissSphere);
+        mmx_validMask = _mm256_and_ps(mmx_validMask, mmx_rayMissSphere);
+        mask = _mm256_movemask_ps(mmx_validMask);
         if (mask == 0)
         {
             continue;
         }
-        
-        // mask off the rays that did not hit the sphere
-        mmx_validMask = _mm256_and_ps(mmx_validMask, mmx_rayMissSphere);
 
         __m256 mmx_thcSq = _mm256_sub_ps(mmx_radSq, mmx_d2);
         __m256 mmx_thc = _mm256_sqrt_ps(mmx_thcSq);
@@ -121,15 +117,14 @@ bool Sphere::intersect_impl(_Intersect &_in)
         __m256 mmx_t0lz = _mm256_cmp_ps(mmx_t0, zeros, _CMP_GE_OS);
         __m256 mmx_t1lz = _mm256_cmp_ps(mmx_t1, zeros, _CMP_GE_OS);
         __m256 mmx_tCombinedMask = _mm256_and_ps(mmx_t0lz, mmx_t1lz);
-        int tMask = _mm256_movemask_ps(mmx_tCombinedMask);
+        mmx_validMask = _mm256_and_ps(mmx_validMask, mmx_tCombinedMask);
+        int validMask = _mm256_movemask_ps(mmx_validMask);
 
         // sphere is either behind or surrounding the ray
-        if (tMask == 0)
+        if (validMask == 0)
         {
             continue;
         }
-        mmx_validMask = _mm256_and_ps(mmx_validMask, mmx_tCombinedMask);
-        int validMask = _mm256_movemask_ps(mmx_validMask);
 
         __m256 mmx_tmin = _mm256_min_ps(mmx_t0, mmx_t1);
         float distSq[c_sphereLaneSz] __attribute__((aligned (32)));

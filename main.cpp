@@ -230,15 +230,15 @@ void rayTrace(RayTraceData data)
     HitRecord hr;
 
     std::vector<Light> lights;
-    lights.push_back({{0.0f, 0.0f, 0.0f}, 4.0f});
-    lights.push_back({{4.0f, 4.3f, 3.3f}, 0.3f});
-    lights.push_back({{-4.f, -2.95f, 3.95f}, 0.3f});
-    lights.push_back({{3.95f, -4.2f, 3.3f}, 0.3f});
-    lights.push_back({{-2.9f, 4.2f, 3.8f}, 0.3f});
-    lights.push_back({{3.95f, 2.8f, -4.3f}, 0.3f});
-    lights.push_back({{-3.0f, -3.8f, -3.3f}, 0.3f});
-    lights.push_back({{4.2f, -4.2f, -3.4f}, 0.3f});
-    lights.push_back({{-2.9f, 4.4f, -3.5f}, 0.3f});
+    lights.push_back({{0.0f, 0.0f, 0.0f}, 3.0f});
+    lights.push_back({{4.0f, 4.3f, 3.3f}, 1.0f});
+    lights.push_back({{-4.f, -2.95f, 3.95f}, 1.0f});
+    lights.push_back({{3.95f, -4.2f, 3.3f}, 1.0f});
+    lights.push_back({{-2.9f, 4.2f, 3.8f}, 1.0f});
+    lights.push_back({{3.95f, 2.8f, -4.3f}, 1.0f});
+    lights.push_back({{-3.0f, -3.8f, -3.3f}, 1.0f});
+    lights.push_back({{4.2f, -4.2f, -3.4f}, 1.0f});
+    lights.push_back({{-2.9f, 4.4f, -3.5f}, 1.0f});
 
     unsigned imageIdx = data.startRow * g_width * STBI_rgb;
     rayDir.y -= heightStep * data.startRow;
@@ -323,5 +323,5 @@ int main()
     }
     threads.clear();
     
-    stbi_write_bmp("output.bmp", g_width, g_height, STBI_rgb, imageData);
+    // stbi_write_png("output.png", g_width, g_height, STBI_rgb, imageData, g_width * STBI_rgb);
 }
