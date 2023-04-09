@@ -1,13 +1,13 @@
 #pragma once
 #include "glm/glm.hpp"
+#include "base_shape.h"
 #include "hitrecord.h"
 #include <limits>
 #include <memory>
 
-class Sphere
+class Sphere : public BaseShape<Sphere>
 {
-    friend class std::allocator<Sphere>;
-    friend class new_allocator;
+    friend BaseShape<Sphere>;
 
     public:
         struct Attributes
@@ -22,17 +22,8 @@ class Sphere
             Attributes attributes;
         };
 
-        struct Intersect 
-        {
-            const glm::vec3 &rayDir;
-            const glm::vec3 &rayOrigin;
-            bool returnOnAny = false;
-            float clippingDistance = std::numeric_limits<float>::infinity();
-            HitRecord &record;
-        };
-
-        static bool intersect(Intersect &_in);
-        static bool intersect_non_vectorized(Intersect &_in);
+        static bool intersect_impl(_Intersect &_in);
+        static bool intersect_non_vectorized(_Intersect &_in);
         static unsigned create(const _Create &);
         static Sphere *getSphere(unsigned index);
 

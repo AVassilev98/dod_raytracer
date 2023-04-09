@@ -30,6 +30,7 @@
   add_executable(dod_raytracer
       main.cpp
       sphere.cpp
+      plane.cpp
   )
 
   target_link_libraries(dod_raytracer

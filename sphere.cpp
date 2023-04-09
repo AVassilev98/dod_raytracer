@@ -8,18 +8,21 @@
 #include "glm/geometric.hpp"
 #include "immintrin.h"
 
-constexpr unsigned c_sphereLaneSz = 8;
-struct SphereLane
-{
-    float x[c_sphereLaneSz];
-    float y[c_sphereLaneSz];
-    float z[c_sphereLaneSz];
-    float radiusSq[c_sphereLaneSz];
-} __attribute__((aligned (32)));
+// sphere.cpp implementation details
+namespace {
+    constexpr unsigned c_sphereLaneSz = 8;
+    struct SphereLane
+    {
+        float x[c_sphereLaneSz];
+        float y[c_sphereLaneSz];
+        float z[c_sphereLaneSz];
+        float radiusSq[c_sphereLaneSz];
+    } __attribute__((aligned (32)));
 
-static unsigned g_numSpheres = 0;
-static std::vector<SphereLane> g_sphereLanes;
-static std::vector<Sphere::Attributes> g_sphereAttributes;
+    unsigned g_numSpheres = 0;
+    std::vector<SphereLane> g_sphereLanes;
+    std::vector<Sphere::Attributes> g_sphereAttributes;
+};
 
 // mutates o* inputs and returns their sum
 static inline __attribute__((always_inline)) __m256 avxDot(const __m256 x, const __m256 y, const __m256 z, __m256 ox, __m256 oy, __m256 oz)
@@ -33,8 +36,10 @@ static inline __attribute__((always_inline)) __m256 avxDot(const __m256 x, const
     return mmx_res;
 }
 
-bool Sphere::intersect(Intersect &_in)
+bool Sphere::intersect_impl(_Intersect &_in)
 {
+    // return intersect_non_vectorized(_in);
+
     _in.record.t = _in.clippingDistance;
     unsigned closestSphereIdx = UINT32_MAX;
     static const __m256 zeros = _mm256_setzero_ps();
@@ -173,7 +178,7 @@ bool Sphere::intersect(Intersect &_in)
     return true;
 }
 
-bool Sphere::intersect_non_vectorized(Intersect &_in)
+bool Sphere::intersect_non_vectorized(_Intersect &_in)
 {
     constexpr float infinity = std::numeric_limits<float>::infinity();
     _in.record.t = std::numeric_limits<float>::infinity();
