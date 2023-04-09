@@ -166,9 +166,9 @@ bool Sphere::intersect(Intersect &_in)
     unsigned sphereIdx = closestSphereIdx % c_sphereLaneSz;
 
     _in.record.color = g_sphereAttributes[closestSphereIdx].color;
-    _in.record.spherePos = glm::vec3(g_sphereLanes[laneIndex].x[sphereIdx], g_sphereLanes[laneIndex].y[sphereIdx], g_sphereLanes[laneIndex].z[sphereIdx]);
+    glm::vec3 spherePos = glm::vec3(g_sphereLanes[laneIndex].x[sphereIdx], g_sphereLanes[laneIndex].y[sphereIdx], g_sphereLanes[laneIndex].z[sphereIdx]);
     _in.record.hitPoint = _in.rayOrigin + _in.rayDir * _in.record.t;
-    _in.record.hitNormal = glm::normalize(_in.record.hitPoint - _in.record.spherePos);
+    _in.record.hitNormal = glm::normalize(_in.record.hitPoint - spherePos);
 
     return true;
 }
@@ -230,9 +230,9 @@ bool Sphere::intersect_non_vectorized(Intersect &_in)
     unsigned sphereIdx = closestSphereIdx % c_sphereLaneSz;
 
     _in.record.color = g_sphereAttributes[closestSphereIdx].color;
-    _in.record.spherePos = glm::vec3(g_sphereLanes[laneIndex].x[sphereIdx], g_sphereLanes[laneIndex].y[sphereIdx], g_sphereLanes[laneIndex].z[sphereIdx]);
+    glm::vec3 spherePos = glm::vec3(g_sphereLanes[laneIndex].x[sphereIdx], g_sphereLanes[laneIndex].y[sphereIdx], g_sphereLanes[laneIndex].z[sphereIdx]);
     _in.record.hitPoint = _in.rayOrigin + _in.rayDir * _in.record.t;
-    _in.record.hitNormal = glm::normalize(_in.record.hitPoint - _in.record.spherePos);
+    _in.record.hitNormal = glm::normalize(_in.record.hitPoint - spherePos);
 
     return true;
 }

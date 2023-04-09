@@ -28,7 +28,7 @@ void generateSpheres(std::vector<unsigned> &sphereIds, unsigned numSpheres)
 
         float dist_x = ((float) rand() / RAND_MAX) * 30.0f * g_ratio - 15.0f * g_ratio;
         float dist_y = ((float) rand() / RAND_MAX) * 30.0f - 15.0f;
-        float dist_z = ((float) rand() / RAND_MAX) * 20.0f;
+        float dist_z = ((float) rand() / RAND_MAX) * 20.0f + ((rand() % 2) * -10.0f);
 
         Sphere::_Create createStruct {
             .position = glm::vec3(dist_x, dist_y, dist_z),
@@ -221,7 +221,7 @@ int main()
 {
     srand(time(NULL));
     std::vector<unsigned> sphereIds;
-    generateSpheres(sphereIds, 1024);
+    generateSpheres(sphereIds, 2048);
     uint8_t *imageData = (uint8_t *)calloc(g_width * g_height * STBI_rgb, sizeof(uint8_t));
 
     unsigned numCores = get_nprocs();
