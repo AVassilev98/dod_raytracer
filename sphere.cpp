@@ -37,8 +37,6 @@ static inline __attribute__((always_inline)) __m256 avxDot(const __m256 x, const
 
 bool Sphere::intersect_impl(_Intersect &_in)
 {
-    // return intersect_non_vectorized(_in);
-
     _in.record.t = _in.clippingDistance;
     unsigned closestSphereIdx = UINT32_MAX;
     static const __m256 zeros = _mm256_setzero_ps();

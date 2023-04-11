@@ -36,8 +36,6 @@ namespace {
 
     bool Plane::intersect_impl(_Intersect &_in)
     {
-        return intersect_non_vectorized_impl(_in);
-
         _in.record.t = _in.clippingDistance;
         unsigned closestPlaneIdx = UINT32_MAX;
         static const __m256 zeros = _mm256_set1_ps(0.001f);
