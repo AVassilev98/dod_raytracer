@@ -4,6 +4,7 @@
 #include "glm/glm.hpp"
 #include "sphere.h"
 #include "plane.h"
+#include "cylinder.h"
 #include "light.h"
 #include <algorithm>
 #include <cstdint>
@@ -104,6 +105,25 @@ void generatePlanes(std::vector<unsigned> &planeIds)
 
 }
 
+void generateCylinders(std::vector<unsigned> &cylinderIds)
+{
+    Cylinder::_Create createInfo = {
+        .radius = 1.5f,
+        .height = 4.0f,
+        .axis = {2.2, 5, 2},
+        .basePosition = {-2, 0, 2},
+        .attributes = 
+        {
+            .color = 
+            {
+                ((float) rand() / RAND_MAX), 
+                ((float) rand() / RAND_MAX),
+                ((float) rand() / RAND_MAX),
+            },
+        },
+    };
+    Cylinder::create(createInfo);
+}
 
 struct RayTraceData
 {
@@ -160,6 +180,11 @@ static bool canSeeLight(const Light &light, const glm::vec3 &hitPoint)
         return false;
     }
     hit |= Plane::intersect(intersectParams);
+    if (hit)
+    {
+        return false;
+    }
+    hit |= Cylinder::intersect(intersectParams);
     if (hit)
     {
         return false;
@@ -264,6 +289,8 @@ void rayTrace(RayTraceData data)
                 bool hit = Sphere::intersect(intersectParams);
                 intersectParams.clippingDistance = intersectParams.record.t;
                 hit |= Plane::intersect(intersectParams);
+                intersectParams.clippingDistance = intersectParams.record.t;
+                hit |= Cylinder::intersect(intersectParams);
                 if (!hit)
                 {
                     break;
@@ -296,9 +323,11 @@ int main()
     srand(time(NULL));
     std::vector<unsigned> sphereIds;
     std::vector<unsigned> planeIds;
+    std::vector<unsigned> cylinderIds;
 
     generateSpheres(sphereIds, 16);
     generatePlanes(planeIds);
+    generateCylinders(planeIds);
     uint8_t *imageData = (uint8_t *)calloc(g_width * g_height * STBI_rgb, sizeof(uint8_t));
 
     unsigned numCores = get_nprocs();
