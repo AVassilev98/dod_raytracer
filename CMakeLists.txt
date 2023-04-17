@@ -32,6 +32,7 @@
       sphere.cpp
       plane.cpp
       cylinder.cpp
+      triangle.cpp
   )
 
   target_link_libraries(dod_raytracer

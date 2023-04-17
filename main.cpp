@@ -6,6 +6,7 @@
 #include "plane.h"
 #include "cylinder.h"
 #include "light.h"
+#include "triangle.h"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -125,6 +126,26 @@ void generateCylinders(std::vector<unsigned> &cylinderIds)
     Cylinder::create(createInfo);
 }
 
+void generateTriangles(std::vector<unsigned> &triangleIds)
+{
+    constexpr std::array<Triangle::_Create, 1> triangles = {{
+    {
+        .A = {-3, 0, 1},
+        .B = {0, 3, 1},
+        .C = {3, 0, 1},
+        .attributes = 
+        {
+            .color = {0.680, 0.224, 0.224},
+        },
+    },
+    }};
+
+    for (const Triangle::_Create &createStruct : triangles)
+    {
+        triangleIds.emplace_back(Triangle::create(createStruct));
+    }
+}
+
 struct RayTraceData
 {
     uint8_t *imageData;
@@ -185,6 +206,11 @@ static bool canSeeLight(const Light &light, const glm::vec3 &hitPoint)
         return false;
     }
     hit |= Cylinder::intersect(intersectParams);
+    if (hit)
+    {
+        return false;
+    }
+    hit |= Triangle::intersect(intersectParams);
     if (hit)
     {
         return false;
@@ -291,6 +317,8 @@ void rayTrace(RayTraceData data)
                 hit |= Plane::intersect(intersectParams);
                 intersectParams.clippingDistance = intersectParams.record.t;
                 hit |= Cylinder::intersect(intersectParams);
+                intersectParams.clippingDistance = intersectParams.record.t;
+                hit |= Triangle::intersect(intersectParams);
                 if (!hit)
                 {
                     break;
@@ -324,10 +352,12 @@ int main()
     std::vector<unsigned> sphereIds;
     std::vector<unsigned> planeIds;
     std::vector<unsigned> cylinderIds;
+    std::vector<unsigned> triangleIds;
 
     generateSpheres(sphereIds, 16);
     generatePlanes(planeIds);
-    generateCylinders(planeIds);
+    generateCylinders(cylinderIds);
+    generateTriangles(triangleIds);
     uint8_t *imageData = (uint8_t *)calloc(g_width * g_height * STBI_rgb, sizeof(uint8_t));
 
     unsigned numCores = get_nprocs();
