@@ -7,6 +7,8 @@
 #include "cylinder.h"
 #include "light.h"
 #include "triangle.h"
+#include "config.h"
+#include <filesystem>
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -15,7 +17,6 @@
 #include "stb_image.h"
 #include "stb_image_write.h"
 #include <vector>
-#include "common_defs.h"
 
 #include <sys/sysinfo.h>
 #include "iostream"
@@ -273,10 +274,10 @@ void compareHitRecords(const HitRecord *hrA, const HitRecord *hrB, unsigned row,
 void rayTrace(RayTraceData data)
 {
     glm::vec3 rayOrigin = {0, 0, -4.9};
-    glm::vec3 rayDir = {-g_ratio, 1.0f, 1};
+    glm::vec3 rayDir = {-Config::Ratio, 1.0f, 1};
 
-    constexpr float widthStep = 2.0f * g_ratio / g_width;
-    constexpr float heightStep = 2.0f / g_height;
+    float widthStep = 2.0f * Config::Ratio / Config::Width;
+    float heightStep = 2.0f / Config::Height;
     
     HitRecord hr;
 
@@ -291,12 +292,12 @@ void rayTrace(RayTraceData data)
     lights.push_back({{4.2f, -4.2f, -3.4f}, 1.0f});
     lights.push_back({{-2.9f, 4.4f, -3.5f}, 1.0f});
 
-    unsigned imageIdx = data.startRow * g_width * STBI_rgb;
+    unsigned imageIdx = data.startRow * Config::Width * STBI_rgb;
     rayDir.y -= heightStep * data.startRow;
 
     for (unsigned i = data.startRow; i < data.endRow; i++)
     {
-        for (unsigned j = 0; j < g_width; j++)
+        for (unsigned j = 0; j < Config::Width; j++)
         {
             const static unsigned recursionDepth = 10;
             
@@ -330,7 +331,7 @@ void rayTrace(RayTraceData data)
                 finalColor = ((1.0f - weight) * finalColor) + (weight * color);
 
                 intersectParams.rayDir = glm::reflect(intersectParams.rayDir, hr.hitNormal);
-                intersectParams.rayOrigin = hr.hitPoint + intersectParams.rayDir * 0.001f;
+                intersectParams.rayOrigin = hr.hitPoint + intersectParams.rayDir * Config::Epsilon;
             }
 
             glm::u8vec3 finalColorU8 = toOutputChannelType(finalColor);
@@ -341,7 +342,7 @@ void rayTrace(RayTraceData data)
 
             rayDir.x += widthStep;
         }
-        rayDir.x = -g_ratio;
+        rayDir.x = -Config::Ratio;
         rayDir.y -= heightStep;
     }
 }
@@ -349,6 +350,12 @@ void rayTrace(RayTraceData data)
 int main()
 {
     srand(time(NULL));
+
+    std::filesystem::path path = std::filesystem::canonical("/proc/self/exe");
+    std::string configPath = path.parent_path().string() + "/config.ini";
+    std::cout << configPath << std::endl;
+    Config::Load(configPath);
+
     std::vector<unsigned> sphereIds;
     std::vector<unsigned> planeIds;
     std::vector<unsigned> cylinderIds;
@@ -358,7 +365,7 @@ int main()
     generatePlanes(planeIds);
     generateCylinders(cylinderIds);
     generateTriangles(triangleIds);
-    uint8_t *imageData = (uint8_t *)calloc(g_width * g_height * STBI_rgb, sizeof(uint8_t));
+    uint8_t *imageData = (uint8_t *)calloc(Config::Width * Config::Height * STBI_rgb, sizeof(uint8_t));
 
     unsigned numCores = get_nprocs();
     std::vector<RayTraceData> threadData(numCores);
@@ -367,20 +374,20 @@ int main()
     std::vector<std::jthread> threads;
     for (unsigned i = 0; i < numCores; i++)
     {
-        if (startRow >= g_height)
+        if (startRow >= Config::Height)
         {
             break;
         }
 
         threadData[i].imageData = imageData;
         threadData[i].startRow = startRow;
-        unsigned endRow = startRow + ((g_height + numCores - 1) / numCores);
-        threadData[i].endRow = endRow > g_height ? g_height : endRow;
+        unsigned endRow = startRow + ((Config::Height + numCores - 1) / numCores);
+        threadData[i].endRow = endRow > Config::Height ? Config::Height : endRow;
 
         threads.emplace_back(rayTrace, threadData[i]);
         startRow = threadData[i].endRow;
     }
     threads.clear();
     
-    stbi_write_png("output.png", g_width, g_height, STBI_rgb, imageData, g_width * STBI_rgb);
+    stbi_write_png("output.png", Config::Width, Config::Height, STBI_rgb, imageData, Config::Width * STBI_rgb);
 }

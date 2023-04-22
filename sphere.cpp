@@ -1,5 +1,4 @@
 #include "sphere.h"
-#include "common_defs.h"
 #include <cstdint>
 #include <immintrin.h>
 #include <cstring>

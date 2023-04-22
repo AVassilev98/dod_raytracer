@@ -1,4 +1,5 @@
 #include "cylinder.h"
+#include "config.h"
 #include "glm/geometric.hpp"
 #include "hitrecord.h"
 #include <limits>
@@ -48,7 +49,7 @@ bool checkDiskIntersect
 )
 {
     float denom = glm::dot(rayDir, planeN);
-    if (fabs(denom) < 0.0001f)
+    if (fabs(denom) < Config::Epsilon)
     {
         return false;
     }
@@ -56,7 +57,7 @@ bool checkDiskIntersect
     float tnum = glm::dot(vecToPlane, planeN);
     float tTotal = tnum / denom;
 
-    if (tTotal < 0.0001f || tTotal > minT)
+    if (tTotal < Config::Epsilon || tTotal > minT)
     {
         return false;
     }
@@ -83,7 +84,7 @@ bool Cylinder::intersect_cylinder_body(_Intersect &_in, HitRecord &hr) const
         float c = glm::dot(deltaPRem, deltaPRem) - m_radiusSq;
 
         float discriminant = (b * b) - (4 * a * c);
-        if (discriminant < 0.0001f)
+        if (discriminant < Config::Epsilon)
         {
             return false;
         }
@@ -124,7 +125,7 @@ bool Cylinder::intersect_cylinder_disc(_Intersect &_in, float offset, HitRecord 
     glm::vec3 normal = m_axis;
 
     float denom = glm::dot(_in.rayDir, normal);
-    if (fabs(denom) < 0.0001f)
+    if (fabs(denom) < Config::Epsilon)
     {
         return false;
     }
@@ -132,7 +133,7 @@ bool Cylinder::intersect_cylinder_disc(_Intersect &_in, float offset, HitRecord 
     float tnum = glm::dot(vecToPlane, normal);
     float t = tnum / denom;
 
-    if (t < 0.0001f || t > minT)
+    if (t < Config::Epsilon || t > minT)
     {
         return false;
     }

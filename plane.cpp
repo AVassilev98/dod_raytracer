@@ -1,4 +1,5 @@
 #include "plane.h"
+#include "config.h"
 #include <immintrin.h>
 #include <vector>
 #include "immintrin.h"
@@ -38,7 +39,7 @@ namespace {
     {
         _in.record.t = _in.clippingDistance;
         unsigned closestPlaneIdx = UINT32_MAX;
-        static const __m256 zeros = _mm256_set1_ps(0.001f);
+        static const __m256 zeros = _mm256_set1_ps(Config::Epsilon);
         static const __m256 sign_mask = _mm256_set1_ps(-0.0f);
         float llm[c_planeLaneSz] __attribute__((aligned(32))) = {};
         unsigned planeRemainder = g_numPlanes % c_planeLaneSz;
@@ -167,7 +168,7 @@ namespace {
                 glm::vec3 normal = glm::vec3(planeLane.nx[j], planeLane.ny[j], planeLane.nz[j]);
 
                 float denom = glm::dot(_in.rayDir, normal);
-                if (fabs(denom) < 0.0001f)
+                if (fabs(denom) < Config::Epsilon)
                 {
                     continue;
                 }
@@ -175,7 +176,7 @@ namespace {
                 float tnum = glm::dot(vecToPlane, normal);
                 float t = tnum / denom;
 
-                if (t < 0.0001f || t > minT)
+                if (t < Config::Epsilon || t > minT)
                 {
                     continue;
                 }

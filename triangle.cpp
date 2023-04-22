@@ -1,4 +1,5 @@
 #include "triangle.h"
+#include "config.h"
 #include "glm/geometric.hpp"
 #include "hitrecord.h"
 #include "vector"
@@ -60,7 +61,7 @@ bool Triangle::intersect_non_vectorized_impl(_Intersect &_in)
             // t = ((A - Ro),norm)/(Rd,norm)
 
             float denominator = glm::dot(_in.rayDir, norm);
-            if (fabs(denominator) < 0.0001f)
+            if (fabs(denominator) < Config::Epsilon)
             {
                 continue;
             }
