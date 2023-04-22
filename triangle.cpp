@@ -5,6 +5,8 @@
 #include "hitrecord.h"
 #include "vector"
 #include <cstdint>
+#include <immintrin.h>
+#include <cstring>
 
 constexpr unsigned c_triangleLaneSz = 8;
 struct TriangleLane
@@ -27,26 +29,155 @@ static std::vector<Triangle::Attributes> g_triangleAttributes;
 
 bool Triangle::intersect_impl(_Intersect &_in)
 {
-    return intersect_non_vectorized_impl(_in);
+    static const __m256 epsilon = _mm256_set1_ps(Config::Epsilon);
+    static const __m256 zero = _mm256_setzero_ps();
+    static const __m256 one = _mm256_set1_ps(1.0f);
+    static const __m256 sign_mask = _mm256_set1_ps(-0.0f);
+
+    float llm[c_triangleLaneSz] __attribute__((aligned(32))) = {};
+    unsigned triangleRemainder = g_numTriangles % c_triangleLaneSz;
+    for (unsigned i = 0; i < triangleRemainder; i++)
+    {
+        memset(&llm[i], 0xFFFFFFFF, sizeof(float));
+    }
+    __m256 mmx_lastLaneMask = _mm256_load_ps(llm);
+
+    float maximumDistance = _in.clippingDistance;
+    unsigned minTriangleIndex = UINT32_MAX;
+
+    avxVec3 rayOrigin = avxVec3Load(_in.rayOrigin);
+    avxVec3 rayDir = avxVec3Load(_in.rayDir);
 
     for (int i = 0; i < g_triangleLanes.size(); i++)
     {
+        __m256 mmxMaxDistance = _mm256_set1_ps(maximumDistance);
+        __m256 validMask = _mm256_set1_ps(-0.0f);
+        // mask off results for the last lane if it is not full
+        if (triangleRemainder && i == g_triangleLanes.size() - 1)
+        {
+            validMask = _mm256_and_ps(validMask, mmx_lastLaneMask);
+        }
+
         const TriangleLane &triangleLane = g_triangleLanes[i];
 
-        __m256 mmx_ax = _mm256_load_ps(triangleLane.Ax);
-        __m256 mmx_ay = _mm256_load_ps(triangleLane.Ay);
-        __m256 mmx_az = _mm256_load_ps(triangleLane.Az);
-        __m256 mmx_bx = _mm256_load_ps(triangleLane.Bx);
-        __m256 mmx_by = _mm256_load_ps(triangleLane.By);
-        __m256 mmx_bz = _mm256_load_ps(triangleLane.Bz);
-        __m256 mmx_cx = _mm256_load_ps(triangleLane.Cx);
-        __m256 mmx_cy = _mm256_load_ps(triangleLane.Cy);
-        __m256 mmx_cz = _mm256_load_ps(triangleLane.Cz);
+        avxVec3 A = {
+            _mm256_load_ps(triangleLane.Ax),
+            _mm256_load_ps(triangleLane.Ay),
+            _mm256_load_ps(triangleLane.Az),
+        };
+        avxVec3 B = {
+            _mm256_load_ps(triangleLane.Bx),
+            _mm256_load_ps(triangleLane.By),
+            _mm256_load_ps(triangleLane.Bz),
+        };
+        avxVec3 C = {
+            _mm256_load_ps(triangleLane.Cx),
+            _mm256_load_ps(triangleLane.Cy),
+            _mm256_load_ps(triangleLane.Cz),
+        };
 
-        
+        avxVec3 AB = avxVec3Sub(B, A);
+        avxVec3 AC = avxVec3Sub(C, A);
+        avxVec3 pvec = avxCross(rayDir, AC);
+        __m256 det = avxDot(pvec, AB);
+        __m256 detAbs = _mm256_andnot_ps(sign_mask, det);
+
+
+        __m256 parallelMask = _mm256_cmp_ps(detAbs, epsilon, _CMP_GT_OS);
+        validMask = _mm256_and_ps(parallelMask, validMask);
+        int laneValid = _mm256_movemask_ps(validMask);
+        if (!laneValid)
+        {
+            continue;
+        }
+
+        __m256 inv_det = _mm256_div_ps(one, det);
+        avxVec3 tvec = avxVec3Sub(rayOrigin, A);
+        __m256 u = _mm256_mul_ps(avxDot(tvec, pvec), inv_det);
+
+        __m256 uInsideTriangleMask = _mm256_and_ps(
+                                        _mm256_cmp_ps(u, zero, _CMP_GT_OS),
+                                        _mm256_cmp_ps(u, one, _CMP_LT_OS));
+        validMask = _mm256_and_ps(uInsideTriangleMask, validMask);
+        laneValid = _mm256_movemask_ps(validMask);
+        if (!laneValid)
+        {
+            continue;
+        }
+
+
+        avxVec3 qvec = avxCross(tvec, AB);
+        __m256 v = _mm256_mul_ps(avxDot(rayDir, qvec), inv_det);
+        __m256 vInsideTriangleMask = _mm256_and_ps(
+                                        _mm256_cmp_ps(v, zero, _CMP_GT_OS),
+                                        _mm256_cmp_ps(_mm256_add_ps(u, v), one, _CMP_LT_OS));
+        validMask = _mm256_and_ps(vInsideTriangleMask, validMask);
+        laneValid = _mm256_movemask_ps(validMask);
+        if (!laneValid)
+        {
+            continue;
+        }
+
+        __m256 mmxT = _mm256_mul_ps(avxDot(AC, qvec), inv_det);
+        __m256 tInCorrectRange = _mm256_and_ps(
+                                    _mm256_cmp_ps(mmxT, zero, _CMP_GT_OS),
+                                    _mm256_cmp_ps(mmxT, mmxMaxDistance, _CMP_LT_OS));
+        validMask = _mm256_and_ps(tInCorrectRange, validMask);
+        laneValid = _mm256_movemask_ps(validMask);
+        if (!laneValid)
+        {
+            continue;
+        }
+
+        float laneT[c_triangleLaneSz] __attribute__((aligned (32)));
+        _mm256_store_ps(laneT, mmxT);
+
+        for (int j = 0; laneValid; laneValid >>= 1, j++)
+        {
+            if (!(laneValid & 1u))
+            {
+                continue;
+            }
+
+            if (laneT[j] < maximumDistance)
+            {
+                maximumDistance = laneT[j];
+                minTriangleIndex = i * c_triangleLaneSz + j;
+            }
+        }
     }
 
-    // return intersect_non_vectorized_impl(_in);
+    if (minTriangleIndex == UINT32_MAX)
+    {
+        return false;
+    }
+
+    unsigned laneIdx = minTriangleIndex / c_triangleLaneSz;
+    unsigned triangleIdx = minTriangleIndex % c_triangleLaneSz;
+
+    glm::vec3 A = {
+        g_triangleLanes[laneIdx].Ax[triangleIdx],
+        g_triangleLanes[laneIdx].Ay[triangleIdx],
+        g_triangleLanes[laneIdx].Az[triangleIdx],
+    };
+    glm::vec3 B = {
+        g_triangleLanes[laneIdx].Bx[triangleIdx],
+        g_triangleLanes[laneIdx].By[triangleIdx],
+        g_triangleLanes[laneIdx].Bz[triangleIdx],
+    };
+    glm::vec3 C = {
+        g_triangleLanes[laneIdx].Cx[triangleIdx],
+        g_triangleLanes[laneIdx].Cy[triangleIdx],
+        g_triangleLanes[laneIdx].Cz[triangleIdx],
+    };
+    glm::vec3 AB = B - A;
+    glm::vec3 AC = C - A;
+
+    _in.record.t = maximumDistance;
+    _in.record.color = g_triangleAttributes[minTriangleIndex].color;
+    _in.record.hitPoint = _in.rayOrigin + _in.rayDir * maximumDistance;
+    _in.record.hitNormal = glm::normalize(glm::cross(AB, AC));
+    return true;
 }
 
 bool Triangle::intersect_non_vectorized_impl(_Intersect &_in)

@@ -64,7 +64,7 @@ namespace {
             __m256 mmx_rdy = _mm256_set1_ps(_in.rayDir.y);
             __m256 mmx_rdz = _mm256_set1_ps(_in.rayDir.z);
 
-            __m256 mmx_denom = avxDot(mmx_rdx, mmx_rdy, mmx_rdz, mmx_nx, mmx_ny, mmx_nz);
+            __m256 mmx_denom = avxDot({mmx_rdx, mmx_rdy, mmx_rdz}, {mmx_nx, mmx_ny, mmx_nz});
             __m256 mmx_abs_denom = _mm256_andnot_ps(sign_mask, mmx_denom);
 
             __m256 mmx_rayParallel = _mm256_cmp_ps(mmx_abs_denom, zeros, _CMP_GT_OS);
@@ -79,7 +79,7 @@ namespace {
             __m256 mmx_vpy = _mm256_sub_ps(mmx_py, mmx_roy);
             __m256 mmx_vpz = _mm256_sub_ps(mmx_pz, mmx_roz);
 
-            __m256 mmx_num = avxDot(mmx_vpx, mmx_vpy, mmx_vpz, mmx_nx, mmx_ny, mmx_nz);
+            __m256 mmx_num = avxDot({mmx_vpx, mmx_vpy, mmx_vpz}, {mmx_nx, mmx_ny, mmx_nz});
             __m256 mmx_t = _mm256_div_ps(mmx_num, mmx_denom);
 
             __m256 mmx_hitBehind = _mm256_cmp_ps(mmx_t, zeros, _CMP_GT_OS);

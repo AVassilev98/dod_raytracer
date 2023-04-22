@@ -63,7 +63,7 @@ bool Sphere::intersect_impl(_Intersect &_in)
         __m256 mmx_ly = _mm256_sub_ps(mmx_sy, mmx_roy);
         __m256 mmx_lz = _mm256_sub_ps(mmx_sz, mmx_roz);
 
-        __m256 mmx_distSq = avxDot(mmx_lx, mmx_ly, mmx_lz, mmx_lx, mmx_ly, mmx_lz);
+        __m256 mmx_distSq = avxDot({mmx_lx, mmx_ly, mmx_lz}, {mmx_lx, mmx_ly, mmx_lz});
         __m256 mmx_radSq = _mm256_load_ps(sphereLane.radiusSq);
 
         // Check if all ray is in all spheres in lane
@@ -80,7 +80,7 @@ bool Sphere::intersect_impl(_Intersect &_in)
         __m256 mmx_rdy = _mm256_set1_ps(_in.rayDir.y);
         __m256 mmx_rdz = _mm256_set1_ps(_in.rayDir.z);
 
-        __m256 mmx_tca = avxDot(mmx_lx, mmx_ly, mmx_lz, mmx_rdx, mmx_rdy, mmx_rdz);
+        __m256 mmx_tca = avxDot({mmx_lx, mmx_ly, mmx_lz}, {mmx_rdx, mmx_rdy, mmx_rdz});
         __m256 mmx_tcaSq = _mm256_mul_ps(mmx_tca, mmx_tca);
         __m256 mmx_d2 = _mm256_sub_ps(mmx_distSq, mmx_tcaSq);
 
