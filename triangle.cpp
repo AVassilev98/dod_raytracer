@@ -1,4 +1,5 @@
 #include "triangle.h"
+#include "avx_utils.h"
 #include "config.h"
 #include "glm/geometric.hpp"
 #include "hitrecord.h"
@@ -27,6 +28,25 @@ static std::vector<Triangle::Attributes> g_triangleAttributes;
 bool Triangle::intersect_impl(_Intersect &_in)
 {
     return intersect_non_vectorized_impl(_in);
+
+    for (int i = 0; i < g_triangleLanes.size(); i++)
+    {
+        const TriangleLane &triangleLane = g_triangleLanes[i];
+
+        __m256 mmx_ax = _mm256_load_ps(triangleLane.Ax);
+        __m256 mmx_ay = _mm256_load_ps(triangleLane.Ay);
+        __m256 mmx_az = _mm256_load_ps(triangleLane.Az);
+        __m256 mmx_bx = _mm256_load_ps(triangleLane.Bx);
+        __m256 mmx_by = _mm256_load_ps(triangleLane.By);
+        __m256 mmx_bz = _mm256_load_ps(triangleLane.Bz);
+        __m256 mmx_cx = _mm256_load_ps(triangleLane.Cx);
+        __m256 mmx_cy = _mm256_load_ps(triangleLane.Cy);
+        __m256 mmx_cz = _mm256_load_ps(triangleLane.Cz);
+
+        
+    }
+
+    // return intersect_non_vectorized_impl(_in);
 }
 
 bool Triangle::intersect_non_vectorized_impl(_Intersect &_in)
@@ -50,57 +70,42 @@ bool Triangle::intersect_non_vectorized_impl(_Intersect &_in)
             glm::vec3 B = glm::vec3(g_triangleLanes[i].Bx[j], g_triangleLanes[i].By[j], g_triangleLanes[i].Bz[j]);
             glm::vec3 C = glm::vec3(g_triangleLanes[i].Cx[j], g_triangleLanes[i].Cy[j], g_triangleLanes[i].Cz[j]);
 
-            glm::vec3 CA = A - C;
             glm::vec3 AB = B - A;
-            glm::vec3 BC = C - B;
-            glm::vec3 norm = -glm::normalize(glm::cross(AB, BC));
+            glm::vec3 AC = C - A;
+            glm::vec3 pvec = glm::cross(_in.rayDir, AC);
+            float det = glm::dot(pvec, AB);
 
-            // do ray plane intersection
-            // (p0 - p),norm = 0
-            // (A - (Ro + Rdt)),norm = 0;
-            // t = ((A - Ro),norm)/(Rd,norm)
+            if (fabs(det) < Config::Epsilon)
+            {
+                continue;
+            }
+            float inv_det = 1.0f / det;
+            glm::vec3 tvec = _in.rayOrigin - A;
 
-            float denominator = glm::dot(_in.rayDir, norm);
-            if (fabs(denominator) < Config::Epsilon)
+            float u = glm::dot(tvec, pvec) * inv_det;
+            if (u < 0.0f || u > 1.0f)
             {
                 continue;
             }
 
-            float numerator = dot((A - _in.rayOrigin), norm);
-            float t = numerator / denominator;
-            if (t < 0 || t > maximumDistance)
+            glm::vec3 qvec = glm::cross(tvec, AB);
+            float v = glm::dot(_in.rayDir, qvec) * inv_det;
+            if (v < 0.0f || v + u > 1.0f)
             {
                 continue;
             }
 
-            glm::vec3 hitPoint = _in.rayOrigin + _in.rayDir * t;
-            glm::vec3 perp;
+            float t = glm::dot(AC, qvec) * inv_det;
 
-            glm::vec3 AH = hitPoint - A;
-            perp = glm::cross(AH, AB);
-            if (glm::dot(perp, norm) < 0.0f)
+            if (t < 0.0f || t > maximumDistance)
             {
                 continue;
             }
 
-            glm::vec3 BH = hitPoint - B;
-            perp = glm::cross(BH, BC);
-            if (glm::dot(perp, norm) < 0.0f)
-            {
-                continue;
-            }
-
-            glm::vec3 CH = hitPoint - C;
-            perp = glm::cross(CH, CA);
-            if (glm::dot(perp, norm) < 0.0f)
-            {
-                continue;
-            }
-
+            minHitPoint = _in.rayOrigin + _in.rayDir * t;
+            minNormal = glm::normalize(glm::cross(AB, AC));
             minTriangleIndex = i * c_triangleLaneSz + j;
             maximumDistance = t;
-            minNormal = norm;
-            minHitPoint = hitPoint;
         }
     }
 
