@@ -127,23 +127,20 @@ void generateCylinders(std::vector<unsigned> &cylinderIds)
     Cylinder::create(createInfo);
 }
 
-void generateTriangles(std::vector<unsigned> &triangleIds)
+void generateMeshes(const std::string &basePath)
 {
-    constexpr std::array<Triangle::_Create, 1> triangles = {{
-    {
-        .A = {-3, 0, 1},
-        .B = {0, 3, 1},
-        .C = {3, 0, 1},
-        .attributes = 
-        {
-            .color = {0.680, 0.224, 0.224},
-        },
-    },
+    std::array<std::string, 1> meshPaths = 
+    {{
+        basePath + "/assets/teapot.obj"
     }};
 
-    for (const Triangle::_Create &createStruct : triangles)
+    for (const std::string &path : meshPaths)
     {
-        triangleIds.emplace_back(Triangle::create(createStruct));
+        Mesh::_Create createStruct = 
+        {
+            .loadPath = path
+        };
+        Mesh::Create(createStruct);
     }
 }
 
@@ -282,7 +279,7 @@ void rayTrace(RayTraceData data)
     HitRecord hr;
 
     std::vector<Light> lights;
-    lights.push_back({{0.0f, 0.0f, 0.0f}, 3.0f});
+    lights.push_back({{0.0f, 0.0f, -2.0f}, 3.0f});
     lights.push_back({{4.0f, 4.3f, 3.3f}, 1.0f});
     lights.push_back({{-4.f, -2.95f, 3.95f}, 1.0f});
     lights.push_back({{3.95f, -4.2f, 3.3f}, 1.0f});
@@ -352,7 +349,8 @@ int main()
     srand(time(NULL));
 
     std::filesystem::path path = std::filesystem::canonical("/proc/self/exe");
-    std::string configPath = path.parent_path().string() + "/config.ini";
+    std::string basePath = path.parent_path().string();
+    std::string configPath = basePath + "/config.ini";
     std::cout << configPath << std::endl;
     Config::Load(configPath);
 
@@ -363,8 +361,8 @@ int main()
 
     generateSpheres(sphereIds, 16);
     generatePlanes(planeIds);
-    generateCylinders(cylinderIds);
-    generateTriangles(triangleIds);
+    // generateCylinders(cylinderIds);
+    generateMeshes(basePath);
     uint8_t *imageData = (uint8_t *)calloc(Config::Width * Config::Height * STBI_rgb, sizeof(uint8_t));
 
     unsigned numCores = get_nprocs();

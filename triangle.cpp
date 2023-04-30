@@ -5,27 +5,28 @@
 #include "hitrecord.h"
 #include "vector"
 #include <cstdint>
+#include <functional>
 #include <immintrin.h>
 #include <cstring>
+#include "mesh.h"
+#include "utils.h"
 
-constexpr unsigned c_triangleLaneSz = 8;
-struct TriangleLane
+const Mesh::Attributes *Triangle::getMeshAttributes(unsigned triangleIdx)
 {
-    float Ax[c_triangleLaneSz];
-    float Ay[c_triangleLaneSz];
-    float Az[c_triangleLaneSz];
-    float Bx[c_triangleLaneSz];
-    float By[c_triangleLaneSz];
-    float Bz[c_triangleLaneSz];
-    float Cx[c_triangleLaneSz];
-    float Cy[c_triangleLaneSz];
-    float Cz[c_triangleLaneSz];
-} __attribute__((aligned (32)));
+    struct Comparator
+    {
+        ComparisonResult operator ()(const Mesh::Attributes& attrs, const unsigned idx)
+        {
+            if (idx >= attrs.triangleIdxRange.first && idx < attrs.triangleIdxRange.second)
+            {
+                return ComparisonResult::Equal;
+            }
+            return idx < attrs.triangleIdxRange.first ? ComparisonResult::LessThan : ComparisonResult::GreaterThan;
+        };
+    };
 
-static unsigned g_numTriangles = 0;
-static std::vector<TriangleLane> g_triangleLanes;
-static std::vector<Triangle::Attributes> g_triangleAttributes;
-
+    return binarySearch<Mesh::Attributes, unsigned, Comparator>(Mesh::m_meshAttributes, triangleIdx);
+}
 
 bool Triangle::intersect_impl(_Intersect &_in)
 {
@@ -35,7 +36,7 @@ bool Triangle::intersect_impl(_Intersect &_in)
     static const __m256 sign_mask = _mm256_set1_ps(-0.0f);
 
     float llm[c_triangleLaneSz] __attribute__((aligned(32))) = {};
-    unsigned triangleRemainder = g_numTriangles % c_triangleLaneSz;
+    unsigned triangleRemainder = m_numTriangles % c_triangleLaneSz;
     for (unsigned i = 0; i < triangleRemainder; i++)
     {
         memset(&llm[i], 0xFFFFFFFF, sizeof(float));
@@ -48,17 +49,17 @@ bool Triangle::intersect_impl(_Intersect &_in)
     avxVec3 rayOrigin = avxVec3Load(_in.rayOrigin);
     avxVec3 rayDir = avxVec3Load(_in.rayDir);
 
-    for (int i = 0; i < g_triangleLanes.size(); i++)
+    for (int i = 0; i < m_triangleLanes.size(); i++)
     {
         __m256 mmxMaxDistance = _mm256_set1_ps(maximumDistance);
         __m256 validMask = _mm256_set1_ps(-0.0f);
         // mask off results for the last lane if it is not full
-        if (triangleRemainder && i == g_triangleLanes.size() - 1)
+        if (triangleRemainder && i == m_triangleLanes.size() - 1)
         {
             validMask = _mm256_and_ps(validMask, mmx_lastLaneMask);
         }
 
-        const TriangleLane &triangleLane = g_triangleLanes[i];
+        const TriangleLane &triangleLane = m_triangleLanes[i];
 
         avxVec3 A = {
             _mm256_load_ps(triangleLane.Ax),
@@ -156,25 +157,28 @@ bool Triangle::intersect_impl(_Intersect &_in)
     unsigned triangleIdx = minTriangleIndex % c_triangleLaneSz;
 
     glm::vec3 A = {
-        g_triangleLanes[laneIdx].Ax[triangleIdx],
-        g_triangleLanes[laneIdx].Ay[triangleIdx],
-        g_triangleLanes[laneIdx].Az[triangleIdx],
+        m_triangleLanes[laneIdx].Ax[triangleIdx],
+        m_triangleLanes[laneIdx].Ay[triangleIdx],
+        m_triangleLanes[laneIdx].Az[triangleIdx],
     };
     glm::vec3 B = {
-        g_triangleLanes[laneIdx].Bx[triangleIdx],
-        g_triangleLanes[laneIdx].By[triangleIdx],
-        g_triangleLanes[laneIdx].Bz[triangleIdx],
+        m_triangleLanes[laneIdx].Bx[triangleIdx],
+        m_triangleLanes[laneIdx].By[triangleIdx],
+        m_triangleLanes[laneIdx].Bz[triangleIdx],
     };
     glm::vec3 C = {
-        g_triangleLanes[laneIdx].Cx[triangleIdx],
-        g_triangleLanes[laneIdx].Cy[triangleIdx],
-        g_triangleLanes[laneIdx].Cz[triangleIdx],
+        m_triangleLanes[laneIdx].Cx[triangleIdx],
+        m_triangleLanes[laneIdx].Cy[triangleIdx],
+        m_triangleLanes[laneIdx].Cz[triangleIdx],
     };
     glm::vec3 AB = B - A;
     glm::vec3 AC = C - A;
 
+    const Mesh::Attributes *mesh_attrs = getMeshAttributes(minTriangleIndex);
+    assert(mesh_attrs && "Triangle _must_ belong to a mesh!\n");
+
     _in.record.t = maximumDistance;
-    _in.record.color = g_triangleAttributes[minTriangleIndex].color;
+    _in.record.color = mesh_attrs->color;
     _in.record.hitPoint = _in.rayOrigin + _in.rayDir * maximumDistance;
     _in.record.hitNormal = glm::normalize(glm::cross(AB, AC));
     return true;
@@ -187,19 +191,19 @@ bool Triangle::intersect_non_vectorized_impl(_Intersect &_in)
     glm::vec3 minHitPoint = {0, 0, 0};
     unsigned minTriangleIndex = UINT32_MAX;
 
-    for (int i = 0; i < g_triangleLanes.size(); i++)
+    for (int i = 0; i < m_triangleLanes.size(); i++)
     {
         for (int j = 0; j < c_triangleLaneSz; j++)
         {
             unsigned idx = (i * c_triangleLaneSz) + j;
-            if (idx >= g_numTriangles)
+            if (idx >= m_numTriangles)
             {
                 break;
             }
 
-            glm::vec3 A = glm::vec3(g_triangleLanes[i].Ax[j], g_triangleLanes[i].Ay[j], g_triangleLanes[i].Az[j]);
-            glm::vec3 B = glm::vec3(g_triangleLanes[i].Bx[j], g_triangleLanes[i].By[j], g_triangleLanes[i].Bz[j]);
-            glm::vec3 C = glm::vec3(g_triangleLanes[i].Cx[j], g_triangleLanes[i].Cy[j], g_triangleLanes[i].Cz[j]);
+            glm::vec3 A = glm::vec3(m_triangleLanes[i].Ax[j], m_triangleLanes[i].Ay[j], m_triangleLanes[i].Az[j]);
+            glm::vec3 B = glm::vec3(m_triangleLanes[i].Bx[j], m_triangleLanes[i].By[j], m_triangleLanes[i].Bz[j]);
+            glm::vec3 C = glm::vec3(m_triangleLanes[i].Cx[j], m_triangleLanes[i].Cy[j], m_triangleLanes[i].Cz[j]);
 
             glm::vec3 AB = B - A;
             glm::vec3 AC = C - A;
@@ -252,7 +256,7 @@ bool Triangle::intersect_non_vectorized_impl(_Intersect &_in)
     record.t = maximumDistance;
     record.hitNormal = minNormal;
     record.hitPoint = minHitPoint;
-    record.color = g_triangleAttributes[minTriangleIndex].color;
+    record.color = m_triangleAttributes[minTriangleIndex].color;
 
     return true;
 }
@@ -261,12 +265,12 @@ bool Triangle::intersect_non_vectorized_impl(_Intersect &_in)
 unsigned Triangle::create(const _Create &createStruct)
 {
     constexpr TriangleLane emptyTriangleLane = {};
-    unsigned triangleIdx = (g_numTriangles) % c_triangleLaneSz;
+    unsigned triangleIdx = (m_numTriangles) % c_triangleLaneSz;
     if (triangleIdx == 0)
     {
-        g_triangleLanes.push_back(emptyTriangleLane);
+        m_triangleLanes.push_back(emptyTriangleLane);
     }
-    auto &lane = g_triangleLanes.back();
+    auto &lane = m_triangleLanes.back();
     lane.Ax[triangleIdx] = createStruct.A.x;
     lane.Ay[triangleIdx] = createStruct.A.y;
     lane.Az[triangleIdx] = createStruct.A.z;
@@ -278,7 +282,5 @@ unsigned Triangle::create(const _Create &createStruct)
     lane.Cx[triangleIdx] = createStruct.C.x;
     lane.Cy[triangleIdx] = createStruct.C.y;
     lane.Cz[triangleIdx] = createStruct.C.z;
-
-    g_triangleAttributes.emplace_back(createStruct.attributes);
-    return ++g_numTriangles;
+    return ++m_numTriangles;
 }
