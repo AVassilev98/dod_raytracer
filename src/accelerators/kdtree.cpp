@@ -232,6 +232,7 @@ void KDTree::recursivelyConstructNodes
     // calculate number of children in each subnode
     std::vector<unsigned> lanesLeftOfSplit;
     std::vector<unsigned> lanesRightOfSplit;
+    assert(boundingBoxEdges[splitAxisNumerical].size() == 2 * laneNums.size() && "There should be two EdgePoints for each Lane!");
     for (unsigned i = 0; i < bestSplitIdx; i++)
     {
         const AxisOffsetInEdge &edgePoint = boundingBoxEdges[splitAxisNumerical][i];
@@ -240,7 +241,7 @@ void KDTree::recursivelyConstructNodes
             lanesLeftOfSplit.push_back(edgePoint.m_laneId);
         }
     }
-    for (unsigned i = bestSplitIdx + 1; i < laneNums.size(); i++)
+    for (unsigned i = bestSplitIdx + 1; i < boundingBoxEdges[splitAxisNumerical].size(); i++)
     {
         const AxisOffsetInEdge &edgePoint = boundingBoxEdges[splitAxisNumerical][i];
         if (edgePoint.m_type == AxisOffsetInEdge::LocationInEdge::End)
@@ -248,6 +249,7 @@ void KDTree::recursivelyConstructNodes
             lanesRightOfSplit.push_back(edgePoint.m_laneId);
         }
     }
+    assert(lanesLeftOfSplit.size() + lanesRightOfSplit.size() >= laneNums.size() && "Split caused missing primitives!");
 
     recursivelyConstructNodes(depth - 1, badRefines, leftNodeBounds, boundingBoxes, lanesLeftOfSplit);
     m_nodes[interiorNodeIdx].initInteriorNode(splitAxis, splitOffset, m_nodes.size());
