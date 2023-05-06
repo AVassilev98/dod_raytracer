@@ -4,10 +4,12 @@
 #include "glm/geometric.hpp"
 #include "hitrecord.h"
 #include "vector"
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <immintrin.h>
 #include <cstring>
+#include <limits>
 #include "mesh.h"
 #include "utils.h"
 
@@ -283,4 +285,51 @@ unsigned Triangle::create(const _Create &createStruct)
     lane.Cy[triangleIdx] = createStruct.C.y;
     lane.Cz[triangleIdx] = createStruct.C.z;
     return ++m_numTriangles;
+}
+
+AxisAlignedBoundingBox Triangle::getBoundingBox(unsigned startIdx, unsigned numElements)
+{
+    constexpr float inf = std::numeric_limits<float>::infinity();
+
+    AxisAlignedBoundingBox boundingBox
+    {
+        .minCorner = glm::vec3(inf),
+        .maxCorner = glm::vec3(-inf),
+    };
+
+    for (int i = 0; i < numElements; i++)
+    {
+        boundingBox.Union(getTriangleBoundingBox(startIdx + i));
+    }
+
+    return boundingBox;
+}
+
+AxisAlignedBoundingBox Triangle::getTriangleBoundingBox(unsigned idx)
+{
+    unsigned laneIdx = idx / c_triangleLaneSz;
+    unsigned triangleIdx = idx % c_triangleLaneSz;
+
+    std::array<glm::vec3, 3> triangleVertices = {{
+        {
+            m_triangleLanes[laneIdx].Ax[triangleIdx],
+            m_triangleLanes[laneIdx].Ay[triangleIdx],
+            m_triangleLanes[laneIdx].Az[triangleIdx]
+        },
+        {
+            m_triangleLanes[laneIdx].Bx[triangleIdx],
+            m_triangleLanes[laneIdx].By[triangleIdx],
+            m_triangleLanes[laneIdx].Bz[triangleIdx],
+        },
+        {
+            m_triangleLanes[laneIdx].Cx[triangleIdx],
+            m_triangleLanes[laneIdx].Cy[triangleIdx],
+            m_triangleLanes[laneIdx].Cz[triangleIdx],
+        }
+    }};
+    
+    return {
+        .minCorner = getElementWiseMinVec3(std::span(triangleVertices)),
+        .maxCorner = getElementWiseMaxVec3(std::span(triangleVertices)),
+    };
 }

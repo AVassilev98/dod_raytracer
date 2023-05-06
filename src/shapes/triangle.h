@@ -4,11 +4,13 @@
 #include "base_shape.h"
 #include <vector>
 #include "mesh.h"
+#include "box.h"
 
 class Triangle : public BaseShape<Triangle>
 {
     private:
         friend class Mesh;
+        friend class KDTree;
     public:
         struct Attributes
         {
@@ -22,9 +24,11 @@ class Triangle : public BaseShape<Triangle>
             glm::vec3 C;
         };
 
+        static AxisAlignedBoundingBox getBoundingBox(unsigned startIdx, unsigned numElements);
         static bool intersect_impl(_Intersect &_in);
         static bool intersect_non_vectorized_impl(_Intersect &_in);
     private:
+        static AxisAlignedBoundingBox getTriangleBoundingBox(unsigned idx);
         static unsigned create(const _Create &);
         static const Mesh::Attributes *getMeshAttributes(unsigned triangleIdx);
 

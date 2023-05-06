@@ -17,12 +17,12 @@ struct _Intersect
 template <class DerivedShape>
 class BaseShape
 {
+    friend DerivedShape;
     public:
 
         static bool intersect(_Intersect &_in) { return DerivedShape::intersect_impl(_in); }
         static bool intersect_non_vectorized(_Intersect &_in) { return DerivedShape::intersect_non_vectorized_impl(_in); }
 
     private:
-        friend DerivedShape;
         BaseShape() = default;
 };

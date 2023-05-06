@@ -4,6 +4,7 @@
 #include "glm/glm.hpp"
 #include "sphere.h"
 #include "plane.h"
+#include "kdtree.h"
 #include "cylinder.h"
 #include "light.h"
 #include "triangle.h"
@@ -363,6 +364,7 @@ int main()
     generatePlanes(planeIds);
     // generateCylinders(cylinderIds);
     generateMeshes(basePath);
+    const KDTree tree = KDTree::buildTree();
     uint8_t *imageData = (uint8_t *)calloc(Config::Width * Config::Height * STBI_rgb, sizeof(uint8_t));
 
     unsigned numCores = get_nprocs();
