@@ -8,7 +8,10 @@
 
 void Mesh::Create(_Create &createStruct)
 {
-    const aiScene *assimp_mesh = m_importer.ReadFile(createStruct.loadPath.c_str(), aiProcess_Triangulate | aiProcess_JoinIdenticalVertices);
+    const aiScene *assimp_mesh = m_importer.ReadFile(createStruct.loadPath.c_str(), 0
+        | aiProcess_Triangulate 
+        | aiProcess_JoinIdenticalVertices
+        | aiProcess_GenSmoothNormals);
 
     Mesh::Attributes meshAttrs = {};
     if (!assimp_mesh || !assimp_mesh->HasMeshes())
@@ -36,6 +39,11 @@ void Mesh::Create(_Create &createStruct)
             triangleCreateStruct.A = aiVec3ToGlmVec3(subMesh.mVertices[face.mIndices[0]]);
             triangleCreateStruct.B = aiVec3ToGlmVec3(subMesh.mVertices[face.mIndices[1]]);
             triangleCreateStruct.C = aiVec3ToGlmVec3(subMesh.mVertices[face.mIndices[2]]);
+
+            triangleCreateStruct.AN = aiVec3ToGlmVec3(subMesh.mNormals[face.mIndices[0]]);
+            triangleCreateStruct.BN = aiVec3ToGlmVec3(subMesh.mNormals[face.mIndices[1]]);
+            triangleCreateStruct.CN = aiVec3ToGlmVec3(subMesh.mNormals[face.mIndices[2]]);
+
             Triangle::create(triangleCreateStruct);
         }
     }

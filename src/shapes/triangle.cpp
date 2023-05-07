@@ -13,14 +13,6 @@
 #include "mesh.h"
 #include "utils.h"
 
-const Mesh::Attributes &Triangle::getMeshAttributes(unsigned triangleIdx)
-{
-    unsigned laneIdx = triangleIdx / c_triangleLaneSz;
-    unsigned inLaneIdx = triangleIdx % c_triangleLaneSz;
-
-    return Mesh::m_meshAttributes[m_triangleAttributes[laneIdx].meshAttrIdx[inLaneIdx]];
-}
-
 bool Triangle::intersect_impl(_Intersect &_in)
 {
     std::span<TriangleLane> range(m_triangleLanes.data(), m_triangleLanes.size());
@@ -46,6 +38,7 @@ bool Triangle::intersectInRange(_Intersect &_in, const std::span<TriangleLane> &
 
     avxVec3 rayOrigin = avxVec3Load(_in.rayOrigin);
     avxVec3 rayDir = avxVec3Load(_in.rayDir);
+    glm::vec3 baryCoords = {0, 0, 0};
 
     for (unsigned i = 0; i < range.size(); i++)
     {
@@ -124,7 +117,11 @@ bool Triangle::intersectInRange(_Intersect &_in, const std::span<TriangleLane> &
         }
 
         float laneT[c_triangleLaneSz] __attribute__((aligned (32)));
+        float laneU[c_triangleLaneSz] __attribute__((aligned (32)));
+        float laneV[c_triangleLaneSz] __attribute__((aligned (32)));
         _mm256_store_ps(laneT, mmxT);
+        _mm256_store_ps(laneU, u);
+        _mm256_store_ps(laneV, v);
 
         for (int j = 0; laneValid; laneValid >>= 1, j++)
         {
@@ -137,6 +134,7 @@ bool Triangle::intersectInRange(_Intersect &_in, const std::span<TriangleLane> &
             {
                 maximumDistance = laneT[j];
                 minTriangleIndex = (startIdx + i) * c_triangleLaneSz + j;
+                baryCoords = {1.0f - (laneU[j] + laneV[j]), laneU[j], laneV[j]};
             }
         }
     }
@@ -164,15 +162,17 @@ bool Triangle::intersectInRange(_Intersect &_in, const std::span<TriangleLane> &
         m_triangleLanes[laneIdx].Cy[triangleIdx],
         m_triangleLanes[laneIdx].Cz[triangleIdx],
     };
-    glm::vec3 AB = B - A;
-    glm::vec3 AC = C - A;
-
-    const Mesh::Attributes &mesh_attrs = getMeshAttributes(minTriangleIndex);
+    
+    const Attributes &triangleAttributes = m_triangleAttributes[laneIdx];
+    const Mesh::Attributes &mesh_attrs = Mesh::m_meshAttributes[triangleAttributes.meshAttrIdx[triangleIdx]];
 
     _in.record.t = maximumDistance;
     _in.record.color = mesh_attrs.color;
     _in.record.hitPoint = _in.rayOrigin + _in.rayDir * maximumDistance;
-    _in.record.hitNormal = glm::normalize(glm::cross(AB, AC));
+    _in.record.hitNormal = glm::mat3(triangleAttributes.AN[triangleIdx],
+                                     triangleAttributes.BN[triangleIdx],
+                                     triangleAttributes.CN[triangleIdx]) * baryCoords;
+
     return true;
 }
 
@@ -181,6 +181,7 @@ bool Triangle::intersect_non_vectorized_impl(_Intersect &_in)
     float maximumDistance = _in.clippingDistance;
     glm::vec3 minNormal = {0, 0, 0};
     glm::vec3 minHitPoint = {0, 0, 0};
+    glm::vec3 baryCoords = {0, 0, 0};
     unsigned minTriangleIndex = UINT32_MAX;
 
     for (int i = 0; i < m_triangleLanes.size(); i++)
@@ -230,9 +231,9 @@ bool Triangle::intersect_non_vectorized_impl(_Intersect &_in)
             }
 
             minHitPoint = _in.rayOrigin + _in.rayDir * t;
-            minNormal = glm::normalize(glm::cross(AB, AC));
             minTriangleIndex = i * c_triangleLaneSz + j;
             maximumDistance = t;
+            baryCoords = {1.0f - (u + v), u, v};
         }
     }
 
@@ -244,10 +245,13 @@ bool Triangle::intersect_non_vectorized_impl(_Intersect &_in)
     unsigned triangleLaneIdx = minTriangleIndex / c_triangleLaneSz;
     unsigned triangleIdx = minTriangleIndex % c_triangleLaneSz;
 
-    const Mesh::Attributes &mesh_attrs = getMeshAttributes(minTriangleIndex);
+    const Attributes &triangleAttributes = m_triangleAttributes[triangleLaneIdx];
+    const Mesh::Attributes &mesh_attrs = Mesh::m_meshAttributes[triangleAttributes.meshAttrIdx[triangleIdx]];
     HitRecord &record = _in.record;
     record.t = maximumDistance;
-    record.hitNormal = minNormal;
+    record.hitNormal = glm::mat3(triangleAttributes.AN[triangleIdx],
+                                 triangleAttributes.BN[triangleIdx],
+                                 triangleAttributes.CN[triangleIdx]) * baryCoords;
     record.hitPoint = minHitPoint;
     record.color = mesh_attrs.color;
 
@@ -280,6 +284,10 @@ unsigned Triangle::create(const _Create &createStruct)
     lane.Cz[triangleIdx] = createStruct.C.z;
 
     attributes.meshAttrIdx[triangleIdx] = Mesh::m_meshAttributes.size() - 1;
+    attributes.AN[triangleIdx] = createStruct.AN;
+    attributes.BN[triangleIdx] = createStruct.BN;
+    attributes.CN[triangleIdx] = createStruct.CN;
+
     return ++m_numTriangles;
 }
 

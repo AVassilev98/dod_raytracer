@@ -19,6 +19,10 @@ class Triangle : public BaseShape<Triangle>
             glm::vec3 A;
             glm::vec3 B;
             glm::vec3 C;
+
+            glm::vec3 AN;
+            glm::vec3 BN;
+            glm::vec3 CN;
         };
 
         static AxisAlignedBoundingBox getBoundingBox(unsigned startIdx, unsigned numElements);
@@ -41,12 +45,14 @@ class Triangle : public BaseShape<Triangle>
         struct Attributes
         {
             unsigned meshAttrIdx[c_triangleLaneSz];
+            glm::vec3 AN[c_triangleLaneSz];
+            glm::vec3 BN[c_triangleLaneSz];
+            glm::vec3 CN[c_triangleLaneSz];
         };
 
     private:
         static AxisAlignedBoundingBox getTriangleBoundingBox(unsigned idx);
         static unsigned create(const _Create &);
-        static const Mesh::Attributes &getMeshAttributes(unsigned triangleIdx);
         static void reorderLanesByIndices(const std::vector<unsigned> &LaneIndices);
         static bool intersectInRange(_Intersect &_in, const std::span<TriangleLane> &range, unsigned startIdx);
 
