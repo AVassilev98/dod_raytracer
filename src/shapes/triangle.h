@@ -5,6 +5,7 @@
 #include <vector>
 #include "mesh.h"
 #include "box.h"
+#include <span>
 
 class Triangle : public BaseShape<Triangle>
 {
@@ -12,10 +13,6 @@ class Triangle : public BaseShape<Triangle>
         friend class Mesh;
         friend class KDTree;
     public:
-        struct Attributes
-        {
-            glm::vec3 color;
-        };
 
         struct _Create
         {
@@ -27,11 +24,6 @@ class Triangle : public BaseShape<Triangle>
         static AxisAlignedBoundingBox getBoundingBox(unsigned startIdx, unsigned numElements);
         static bool intersect_impl(_Intersect &_in);
         static bool intersect_non_vectorized_impl(_Intersect &_in);
-    private:
-        static AxisAlignedBoundingBox getTriangleBoundingBox(unsigned idx);
-        static unsigned create(const _Create &);
-        static const Mesh::Attributes *getMeshAttributes(unsigned triangleIdx);
-
     private:
         static constexpr unsigned c_triangleLaneSz = 8;
         struct TriangleLane
@@ -46,6 +38,17 @@ class Triangle : public BaseShape<Triangle>
             float Cy[c_triangleLaneSz];
             float Cz[c_triangleLaneSz];
         } __attribute__((aligned (32)));
+        struct Attributes
+        {
+            unsigned meshAttrIdx[c_triangleLaneSz];
+        };
+
+    private:
+        static AxisAlignedBoundingBox getTriangleBoundingBox(unsigned idx);
+        static unsigned create(const _Create &);
+        static const Mesh::Attributes &getMeshAttributes(unsigned triangleIdx);
+        static void reorderLanesByIndices(const std::vector<unsigned> &LaneIndices);
+        static bool intersectInRange(_Intersect &_in, const std::span<TriangleLane> &range, unsigned startIdx);
 
         static inline unsigned m_numTriangles = 0;
         static inline std::vector<TriangleLane> m_triangleLanes;

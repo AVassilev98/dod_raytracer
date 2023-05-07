@@ -48,17 +48,10 @@ void KDTree::Node::initLeafNode(const std::span<unsigned> &laneNums, std::vector
     {
         m_triangleLaneIdx = 0;
     }
-    else if (laneNums.size() == 1)
+    m_triangleLaneIdx = allLaneIndices.size();
+    for (unsigned idx : laneNums)
     {
-        m_singleLaneLeafNode = laneNums[0];
-    }
-    else
-    {
-        m_triangleLaneIdx = allLaneIndices.size();
-        for (unsigned idx : laneNums)
-        {
-            allLaneIndices.push_back(idx);
-        }
+        allLaneIndices.push_back(idx);
     }
 }
 
@@ -95,7 +88,7 @@ void KDTree::init()
         worldBound.Union(laneBoundingBoxes.back());
         laneNumbers.push_back(i / triangleLaneSize);
     }    
-    
+    m_bounds = worldBound;
     recursivelyConstructNodes(m_maxDepth, 0, worldBound, laneBoundingBoxes, laneNumbers);
 }
 
@@ -259,6 +252,110 @@ void KDTree::recursivelyConstructNodes
 const KDTree KDTree::buildTree()
 {
     KDTree tree;
+    printf("Beginning tree construction\n");
     tree.init();
+    printf("Tree construction complete\n");
+    Triangle::reorderLanesByIndices(tree.m_primNums);
     return tree;
+}
+
+// based on the pbrt implementation with some performance improvements
+bool KDTree::intersect(_Intersect &_in) const
+{
+    struct workItem
+    {
+        const Node *node;
+        float tmin;
+        float tmax;
+    };
+    glm::vec3 invRayDir = glm::vec3(1.0, 1.0, 1.0) / _in.rayDir;
+    float tmin;
+    float tmax;
+    if (!m_bounds.intersect(_in, invRayDir, tmin, tmax) || tmin > _in.clippingDistance)
+    {
+        return false;
+    }
+
+    workItem worklist[64];
+    int worklistPos = 0;
+    const Node *node = &m_nodes[0];
+    bool hit = false;
+
+    while (node)
+    {
+        if (_in.clippingDistance < tmin)
+        {
+            break;
+        }
+        if (!node->isLeaf())
+        {
+            unsigned axis = static_cast<unsigned>(node->splitAxis());
+            float tPlane = (node->splitOffset() - _in.rayOrigin[axis]) * invRayDir[axis];
+
+            const Node *leftChild;
+            const Node *rightChild;
+            bool leftFirst =
+                (_in.rayOrigin[axis] < node->splitOffset()) ||
+                (_in.rayOrigin[axis] == node->splitOffset() && _in.rayDir[axis] <= 0);
+            if (leftFirst)
+            {
+                leftChild = node + 1;
+                rightChild = &m_nodes[node->rightChildIdx()];
+            }
+            else
+            {
+                leftChild = &m_nodes[node->rightChildIdx()];
+                rightChild = node + 1;
+            }
+
+            // get next child node
+            if (tPlane > tmax || tPlane <= 0)
+            {
+                node = leftChild;
+            }
+            else if (tPlane < tmin)
+            {
+                node = rightChild;
+            }
+            else 
+            {
+                // put rightChild in worklist
+                worklist[worklistPos].node = rightChild;
+                worklist[worklistPos].tmin = tPlane;
+                worklist[worklistPos].tmax = tmax;
+                ++worklistPos;
+                node = leftChild;
+                tmax = tPlane;
+            }
+        }
+        else
+        {
+            // Check for intersections inside leaf node
+            int numLanes = node->numLanes();
+            std::span<Triangle::TriangleLane> laneRange(&Triangle::m_triangleLanes[node->laneStartIdx()], numLanes);
+            if(Triangle::intersectInRange(_in, laneRange, node->laneStartIdx()))
+            {
+                if(_in.returnOnAny)
+                {
+                    return true;
+                }
+                hit = true;
+                _in.clippingDistance = _in.record.t;
+            }            
+
+            // Grab next node to process from worklist
+            if (worklistPos > 0)
+            {
+                --worklistPos;
+                node = worklist[worklistPos].node;
+                tmin = worklist[worklistPos].tmin;
+                tmax = worklist[worklistPos].tmax;
+            } 
+            else
+            {
+                break;
+            }
+        }
+    }
+    return hit;
 }

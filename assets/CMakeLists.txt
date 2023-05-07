@@ -1,5 +1,7 @@
 file(GLOB assets 
     *.obj
+    *.ply
+    *.blend
 )
 foreach(asset ${assets})
   get_filename_component(fileName ${asset} NAME)

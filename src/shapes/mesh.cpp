@@ -17,6 +17,9 @@ void Mesh::Create(_Create &createStruct)
         return;
     }
 
+    meshAttrs.color = {0.1, 0.8, 0.3};
+    m_meshAttributes.push_back(meshAttrs);
+
     unsigned existingGlobalTriangleIdx = Triangle::m_numTriangles;
     Triangle::_Create triangleCreateStruct = {};
     for (int i = 0; i < assimp_mesh->mNumMeshes; i++)
@@ -36,8 +39,4 @@ void Mesh::Create(_Create &createStruct)
             Triangle::create(triangleCreateStruct);
         }
     }
-    meshAttrs.triangleIdxRange = {existingGlobalTriangleIdx, Triangle::m_numTriangles};
-    meshAttrs.color = {0.1, 0.8, 0.3};
-
-    m_meshAttributes.push_back(meshAttrs);
 }

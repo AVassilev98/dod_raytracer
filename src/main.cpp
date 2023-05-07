@@ -132,7 +132,7 @@ void generateMeshes(const std::string &basePath)
 {
     std::array<std::string, 1> meshPaths = 
     {{
-        basePath + "/assets/teapot.obj"
+        basePath + "/assets/dragon.obj"
     }};
 
     for (const std::string &path : meshPaths)
@@ -150,6 +150,7 @@ struct RayTraceData
     uint8_t *imageData;
     unsigned startRow;
     unsigned endRow;
+    const KDTree *tree;
 };
 
 float shadeAmbientFactor()
@@ -178,7 +179,7 @@ static inline float shadeSpecularFactor(const Light &light, const HitRecord &hr,
     return factor;
 }
 
-static bool canSeeLight(const Light &light, const glm::vec3 &hitPoint)
+static bool canSeeLight(const Light &light, const glm::vec3 &hitPoint, const KDTree &tree)
 {
     glm::vec3 lightDir = light.position - hitPoint;
     float lightDistance = glm::length(lightDir);
@@ -209,7 +210,7 @@ static bool canSeeLight(const Light &light, const glm::vec3 &hitPoint)
     {
         return false;
     }
-    hit |= Triangle::intersect(intersectParams);
+    hit |= tree.intersect(intersectParams);
     if (hit)
     {
         return false;
@@ -217,12 +218,12 @@ static bool canSeeLight(const Light &light, const glm::vec3 &hitPoint)
     return true;
 }
 
-float getLightingFactor(const std::vector<Light> &lights, const HitRecord &hr, const glm::vec3 &rayDir)
+float getLightingFactor(const std::vector<Light> &lights, const HitRecord &hr, const glm::vec3 &rayDir, const KDTree &tree)
 {
     float lightingFactor = shadeAmbientFactor();
     for (const auto &light : lights)
     {
-        if (!canSeeLight(light, hr.hitPoint))
+        if (!canSeeLight(light, hr.hitPoint, tree))
         {
             continue;
         }
@@ -269,7 +270,7 @@ void compareHitRecords(const HitRecord *hrA, const HitRecord *hrB, unsigned row,
     // printf("(%4u,%4u,%4u) - OK\n", row, col, depth);
 }
 
-void rayTrace(RayTraceData data)
+void rayTrace(const RayTraceData data)
 {
     glm::vec3 rayOrigin = {0, 0, -4.9};
     glm::vec3 rayDir = {-Config::Ratio, 1.0f, 1};
@@ -317,14 +318,14 @@ void rayTrace(RayTraceData data)
                 intersectParams.clippingDistance = intersectParams.record.t;
                 hit |= Cylinder::intersect(intersectParams);
                 intersectParams.clippingDistance = intersectParams.record.t;
-                hit |= Triangle::intersect(intersectParams);
+                hit |= data.tree->intersect(intersectParams);
                 if (!hit)
                 {
                     break;
                 }
                 float weight = 1.0f / pow(2.0f, k);
 
-                float lightingFactor = getLightingFactor(lights, hr, rayDir);
+                float lightingFactor = getLightingFactor(lights, hr, rayDir, *data.tree);
                 glm::vec3 color = hr.color * lightingFactor;
                 finalColor = ((1.0f - weight) * finalColor) + (weight * color);
 
@@ -362,13 +363,14 @@ int main()
 
     generateSpheres(sphereIds, 16);
     generatePlanes(planeIds);
-    // generateCylinders(cylinderIds);
+    generateCylinders(cylinderIds);
     generateMeshes(basePath);
     const KDTree tree = KDTree::buildTree();
     uint8_t *imageData = (uint8_t *)calloc(Config::Width * Config::Height * STBI_rgb, sizeof(uint8_t));
 
     unsigned numCores = get_nprocs();
-    std::vector<RayTraceData> threadData(numCores);
+    std::vector<RayTraceData> threadData;
+    threadData.reserve(numCores);
     unsigned startRow = 0;
 
     std::vector<std::jthread> threads;
@@ -379,10 +381,12 @@ int main()
             break;
         }
 
+
         threadData[i].imageData = imageData;
         threadData[i].startRow = startRow;
         unsigned endRow = startRow + ((Config::Height + numCores - 1) / numCores);
         threadData[i].endRow = endRow > Config::Height ? Config::Height : endRow;
+        threadData[i].tree = &tree;
 
         threads.emplace_back(rayTrace, threadData[i]);
         startRow = threadData[i].endRow;

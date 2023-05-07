@@ -13,7 +13,6 @@ class Mesh : public BaseShape<Mesh>
         struct Attributes
         {
             glm::vec3 color;
-            std::pair<unsigned, unsigned> triangleIdxRange;
         };
 
         struct _Create

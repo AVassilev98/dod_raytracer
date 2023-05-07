@@ -13,26 +13,22 @@
 #include "mesh.h"
 #include "utils.h"
 
-const Mesh::Attributes *Triangle::getMeshAttributes(unsigned triangleIdx)
+const Mesh::Attributes &Triangle::getMeshAttributes(unsigned triangleIdx)
 {
-    struct Comparator
-    {
-        ComparisonResult operator ()(const Mesh::Attributes& attrs, const unsigned idx)
-        {
-            if (idx >= attrs.triangleIdxRange.first && idx < attrs.triangleIdxRange.second)
-            {
-                return ComparisonResult::Equal;
-            }
-            return idx < attrs.triangleIdxRange.first ? ComparisonResult::LessThan : ComparisonResult::GreaterThan;
-        };
-    };
+    unsigned laneIdx = triangleIdx / c_triangleLaneSz;
+    unsigned inLaneIdx = triangleIdx % c_triangleLaneSz;
 
-    return binarySearch<Mesh::Attributes, unsigned, Comparator>(Mesh::m_meshAttributes, triangleIdx);
+    return Mesh::m_meshAttributes[m_triangleAttributes[laneIdx].meshAttrIdx[inLaneIdx]];
 }
 
 bool Triangle::intersect_impl(_Intersect &_in)
 {
-    static const __m256 epsilon = _mm256_set1_ps(Config::Epsilon);
+    std::span<TriangleLane> range(m_triangleLanes.data(), m_triangleLanes.size());
+    return intersectInRange(_in, range, 0);
+}
+
+bool Triangle::intersectInRange(_Intersect &_in, const std::span<TriangleLane> &range, unsigned startIdx)
+{
     static const __m256 zero = _mm256_setzero_ps();
     static const __m256 one = _mm256_set1_ps(1.0f);
     static const __m256 sign_mask = _mm256_set1_ps(-0.0f);
@@ -51,17 +47,12 @@ bool Triangle::intersect_impl(_Intersect &_in)
     avxVec3 rayOrigin = avxVec3Load(_in.rayOrigin);
     avxVec3 rayDir = avxVec3Load(_in.rayDir);
 
-    for (int i = 0; i < m_triangleLanes.size(); i++)
+    for (unsigned i = 0; i < range.size(); i++)
     {
         __m256 mmxMaxDistance = _mm256_set1_ps(maximumDistance);
         __m256 validMask = _mm256_set1_ps(-0.0f);
         // mask off results for the last lane if it is not full
-        if (triangleRemainder && i == m_triangleLanes.size() - 1)
-        {
-            validMask = _mm256_and_ps(validMask, mmx_lastLaneMask);
-        }
-
-        const TriangleLane &triangleLane = m_triangleLanes[i];
+        const TriangleLane &triangleLane  = range[i];
 
         avxVec3 A = {
             _mm256_load_ps(triangleLane.Ax),
@@ -86,7 +77,7 @@ bool Triangle::intersect_impl(_Intersect &_in)
         __m256 detAbs = _mm256_andnot_ps(sign_mask, det);
 
 
-        __m256 parallelMask = _mm256_cmp_ps(detAbs, epsilon, _CMP_GT_OS);
+        __m256 parallelMask = _mm256_cmp_ps(detAbs, zero, _CMP_GT_OS);
         validMask = _mm256_and_ps(parallelMask, validMask);
         int laneValid = _mm256_movemask_ps(validMask);
         if (!laneValid)
@@ -145,7 +136,7 @@ bool Triangle::intersect_impl(_Intersect &_in)
             if (laneT[j] < maximumDistance)
             {
                 maximumDistance = laneT[j];
-                minTriangleIndex = i * c_triangleLaneSz + j;
+                minTriangleIndex = (startIdx + i) * c_triangleLaneSz + j;
             }
         }
     }
@@ -176,11 +167,10 @@ bool Triangle::intersect_impl(_Intersect &_in)
     glm::vec3 AB = B - A;
     glm::vec3 AC = C - A;
 
-    const Mesh::Attributes *mesh_attrs = getMeshAttributes(minTriangleIndex);
-    assert(mesh_attrs && "Triangle _must_ belong to a mesh!\n");
+    const Mesh::Attributes &mesh_attrs = getMeshAttributes(minTriangleIndex);
 
     _in.record.t = maximumDistance;
-    _in.record.color = mesh_attrs->color;
+    _in.record.color = mesh_attrs.color;
     _in.record.hitPoint = _in.rayOrigin + _in.rayDir * maximumDistance;
     _in.record.hitNormal = glm::normalize(glm::cross(AB, AC));
     return true;
@@ -254,11 +244,12 @@ bool Triangle::intersect_non_vectorized_impl(_Intersect &_in)
     unsigned triangleLaneIdx = minTriangleIndex / c_triangleLaneSz;
     unsigned triangleIdx = minTriangleIndex % c_triangleLaneSz;
 
+    const Mesh::Attributes &mesh_attrs = getMeshAttributes(minTriangleIndex);
     HitRecord &record = _in.record;
     record.t = maximumDistance;
     record.hitNormal = minNormal;
     record.hitPoint = minHitPoint;
-    record.color = m_triangleAttributes[minTriangleIndex].color;
+    record.color = mesh_attrs.color;
 
     return true;
 }
@@ -266,13 +257,16 @@ bool Triangle::intersect_non_vectorized_impl(_Intersect &_in)
 
 unsigned Triangle::create(const _Create &createStruct)
 {
-    constexpr TriangleLane emptyTriangleLane = {};
+    constexpr TriangleLane emptyTriangleLane = { 0 };
+    constexpr Attributes emptyTriangleAttributes = { 0 };
     unsigned triangleIdx = (m_numTriangles) % c_triangleLaneSz;
     if (triangleIdx == 0)
     {
         m_triangleLanes.push_back(emptyTriangleLane);
+        m_triangleAttributes.push_back(emptyTriangleAttributes);
     }
     auto &lane = m_triangleLanes.back();
+    auto &attributes = m_triangleAttributes.back();
     lane.Ax[triangleIdx] = createStruct.A.x;
     lane.Ay[triangleIdx] = createStruct.A.y;
     lane.Az[triangleIdx] = createStruct.A.z;
@@ -284,6 +278,8 @@ unsigned Triangle::create(const _Create &createStruct)
     lane.Cx[triangleIdx] = createStruct.C.x;
     lane.Cy[triangleIdx] = createStruct.C.y;
     lane.Cz[triangleIdx] = createStruct.C.z;
+
+    attributes.meshAttrIdx[triangleIdx] = Mesh::m_meshAttributes.size() - 1;
     return ++m_numTriangles;
 }
 
@@ -332,4 +328,32 @@ AxisAlignedBoundingBox Triangle::getTriangleBoundingBox(unsigned idx)
         .minCorner = getElementWiseMinVec3(std::span(triangleVertices)),
         .maxCorner = getElementWiseMaxVec3(std::span(triangleVertices)),
     };
+}
+
+/*
+This function reorders the triangleLanes so that the acceleration
+structure does not need to jump around in the vector to grab the
+lanes that belong in its node. Note that there can be duplication
+(The same Lane in multiple nodes), so this will have a (slightly)
+larger memory footprint on average than the original vector. This
+tradeoff is worth it due to the cache coherency improvement.
+*/
+void Triangle::reorderLanesByIndices(const std::vector<unsigned> &indices)
+{
+    std::vector<Attributes> reorderedAttributes;
+    std::vector<TriangleLane> reorderedLanes;
+    reorderedAttributes.reserve(indices.size());
+    reorderedLanes.reserve(indices.size());
+
+    printf("%lu lanes duplicated\n", indices.size() - m_triangleLanes.size());
+
+    for (unsigned idx : indices)
+    {
+        reorderedAttributes.push_back(m_triangleAttributes[idx]);
+        reorderedLanes.push_back(m_triangleLanes[idx]);
+    }
+
+    m_triangleLanes = std::move(reorderedLanes);
+    m_triangleAttributes = std::move(reorderedAttributes);
+    printf("Done reordering triangles\n");
 }
